@@ -1,0 +1,51 @@
+# Dependencies
+node_modules/
+
+# Build
+dist/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Database
+*.db
+*.db-journal
+
+# Docker volumes
+docker-data/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+/.idea
+/.vscode
+/.fleet
+/.zed
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+debug.log
+
+# Temp
+*.tmp
+
+# Prisma
+server/prisma/*.db
+server/prisma/migrations/**/migration_lock.toml
+
+# Hook runtime files
+setup/hooks/.claude-email-cache
+setup/hooks/debug.log
+
+# npm
+package-lock.json
+npm-debug.log*
+setup/hooks/config.json
+.mcp.json

@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>トークン利用分析 — Claude Activity Tracker</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-layout">
+
+  <!-- ===== サイドナビ ===== -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-logo">
+        <div class="sidebar-logo-icon">C</div>
+        <div>
+          <div class="sidebar-logo-text">Activity Tracker</div>
+          <div class="sidebar-logo-sub">Claude 利用分析</div>
+        </div>
+      </div>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="dashboard.html">
+        <span class="sidebar-nav-icon">&#x1F3E0;</span> 概要ダッシュボード
+      </a>
+      <a href="tokens.html" class="active">
+        <span class="sidebar-nav-icon">&#x1F4B0;</span> トークン利用分析
+      </a>
+      <a href="members.html">
+        <span class="sidebar-nav-icon">&#x1F465;</span> メンバー分析
+      </a>
+      <a href="repositories.html">
+        <span class="sidebar-nav-icon">&#x1F4C1;</span> リポジトリ分析
+      </a>
+      <a href="sessions.html">
+        <span class="sidebar-nav-icon">&#x1F4DD;</span> セッション履歴
+      </a>
+      <a href="session-detail.html">
+        <span class="sidebar-nav-icon">&#x1F50D;</span> セッション詳細
+      </a>
+    </nav>
+    <div class="sidebar-footer">
+      v0.1.0 — Mock
+    </div>
+  </aside>
+
+  <!-- ===== メインコンテンツ ===== -->
+  <main class="main-content">
+
+    <!-- フィルターバー -->
+    <div class="filter-bar">
+      <div class="filter-group">
+        <label>期間</label>
+        <input type="date" value="2026-01-01">
+        <span class="text-muted">〜</span>
+        <input type="date" value="2026-01-31">
+      </div>
+      <div class="filter-group">
+        <label>メンバー</label>
+        <select>
+          <option>全メンバー</option>
+          <option>田中太郎</option>
+          <option>鈴木花子</option>
+          <option>佐藤健一</option>
+          <option>山田美咲</option>
+          <option>中村大輔</option>
+          <option>小林陽子</option>
+          <option>加藤翔太</option>
+          <option>伊藤真理</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>リポジトリ</label>
+        <select>
+          <option>全リポジトリ</option>
+          <option>frontend-app</option>
+          <option>backend-api</option>
+          <option>infra-terraform</option>
+          <option>mobile-app</option>
+          <option>data-pipeline</option>
+        </select>
+      </div>
+      <button class="btn btn-primary btn-apply">適用</button>
+    </div>
+
+    <!-- ページヘッダー -->
+    <div class="page-header">
+      <h1>トークン利用分析</h1>
+      <p>トークン消費の詳細分析 — モデル別・種別別の内訳</p>
+    </div>
+
+    <div class="page-body">
+
+      <!-- KPIカード -->
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-icon blue">&#x2B07;</div>
+          <div class="kpi-content">
+            <div class="kpi-value">1.8M</div>
+            <div class="kpi-label">総入力トークン</div>
+            <div class="kpi-sub"><span class="up">&#x25B2; 15%</span> 前月比</div>
+          </div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-icon amber">&#x2B06;</div>
+          <div class="kpi-content">
+            <div class="kpi-value">420K</div>
+            <div class="kpi-label">総出力トークン</div>
+            <div class="kpi-sub"><span class="up">&#x25B2; 10%</span> 前月比</div>
+          </div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-icon purple">&#x1F4BE;</div>
+          <div class="kpi-content">
+            <div class="kpi-value">350K</div>
+            <div class="kpi-label">キャッシュ作成</div>
+            <div class="kpi-sub"><span class="up">&#x25B2; 22%</span> 前月比</div>
+          </div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-icon green">&#x267B;</div>
+          <div class="kpi-content">
+            <div class="kpi-value">68<span style="font-size:14px;font-weight:400;color:var(--text-secondary)">%</span></div>
+            <div class="kpi-label">キャッシュ効率</div>
+            <div class="kpi-sub"><span class="up">&#x25B2; 5%</span> 前月比</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 日次トークン消費推移（積み上げエリア風） -->
+      <div class="grid-1">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">日次トークン消費推移（モデル別）</span>
+            <div style="display:flex;gap:12px;font-size:12px;color:var(--text-secondary);">
+              <span style="display:flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;background:var(--chart-opus);border-radius:2px;display:inline-block;"></span> Opus</span>
+              <span style="display:flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;background:var(--chart-sonnet);border-radius:2px;display:inline-block;"></span> Sonnet</span>
+              <span style="display:flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;background:var(--chart-haiku);border-radius:2px;display:inline-block;"></span> Haiku</span>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="stacked-area">
+              <svg viewBox="0 0 800 220" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none" style="height:220px;">
+                <!-- Grid -->
+                <line x1="0" y1="40" x2="800" y2="40" stroke="#334155" stroke-width="0.5" stroke-dasharray="4"/>
+                <line x1="0" y1="90" x2="800" y2="90" stroke="#334155" stroke-width="0.5" stroke-dasharray="4"/>
+                <line x1="0" y1="140" x2="800" y2="140" stroke="#334155" stroke-width="0.5" stroke-dasharray="4"/>
+
+                <!-- Haiku (最背面 - 合計エリア) -->
+                <polygon fill="rgba(34,211,238,0.15)"
+                  points="0,180 27,175 53,168 80,172 107,160 133,155 160,162 187,148 213,142 240,150 267,138 293,132 320,140 347,128 373,122 400,118 427,125 453,120 480,112 507,108 533,115 560,105 587,100 613,108 640,95 667,98 693,90 720,96 747,92 773,85 800,88 800,200 0,200"/>
+
+                <!-- Sonnet (中間エリア) -->
+                <polygon fill="rgba(59,130,246,0.2)"
+                  points="0,160 27,155 53,145 80,150 107,135 133,130 160,138 187,122 213,115 240,125 267,110 293,105 320,114 347,100 373,95 400,90 427,98 453,92 480,82 507,78 533,86 560,75 587,70 613,80 640,65 667,68 693,58 720,66 747,60 773,52 800,56 800,200 0,200"/>
+
+                <!-- Opus (最前面エリア) -->
+                <polygon fill="rgba(139,92,246,0.22)"
+                  points="0,130 27,125 53,115 80,120 107,105 133,98 160,108 187,92 213,85 240,95 267,80 293,75 320,84 347,72 373,65 400,60 427,68 453,62 480,52 507,48 533,56 560,45 587,40 613,50 640,35 667,38 693,28 720,36 747,30 773,22 800,26 800,200 0,200"/>
+
+                <!-- 上部の境界線 -->
+                <polyline fill="none" stroke="#8b5cf6" stroke-width="2" stroke-linejoin="round"
+                  points="0,130 27,125 53,115 80,120 107,105 133,98 160,108 187,92 213,85 240,95 267,80 293,75 320,84 347,72 373,65 400,60 427,68 453,62 480,52 507,48 533,56 560,45 587,40 613,50 640,35 667,38 693,28 720,36 747,30 773,22 800,26"/>
+
+                <polyline fill="none" stroke="#3b82f6" stroke-width="1.5" stroke-linejoin="round" stroke-dasharray="4"
+                  points="0,160 27,155 53,145 80,150 107,135 133,130 160,138 187,122 213,115 240,125 267,110 293,105 320,114 347,100 373,95 400,90 427,98 453,92 480,82 507,78 533,86 560,75 587,70 613,80 640,65 667,68 693,58 720,66 747,60 773,52 800,56"/>
+
+                <polyline fill="none" stroke="#22d3ee" stroke-width="1.5" stroke-linejoin="round" stroke-dasharray="4"
+                  points="0,180 27,175 53,168 80,172 107,160 133,155 160,162 187,148 213,142 240,150 267,138 293,132 320,140 347,128 373,122 400,118 427,125 453,120 480,112 507,108 533,115 560,105 587,100 613,108 640,95 667,98 693,90 720,96 747,92 773,85 800,88"/>
+
+                <!-- X軸ラベル -->
+                <text x="0" y="215" fill="#64748b" font-size="9">1/1</text>
+                <text x="160" y="215" fill="#64748b" font-size="9">1/7</text>
+                <text x="320" y="215" fill="#64748b" font-size="9">1/13</text>
+                <text x="480" y="215" fill="#64748b" font-size="9">1/19</text>
+                <text x="640" y="215" fill="#64748b" font-size="9">1/25</text>
+                <text x="773" y="215" fill="#64748b" font-size="9">1/31</text>
+              </svg>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ドーナツチャート 2つ -->
+      <div class="grid-2">
+
+        <!-- モデル別トークン比率 -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">モデル別トークン比率</span>
+          </div>
+          <div class="card-body">
+            <div class="donut-chart">
+              <svg viewBox="0 0 180 180" width="180" height="180" xmlns="http://www.w3.org/2000/svg">
+                <!-- Opus 45% -->
+                <circle cx="90" cy="90" r="70" fill="none" stroke="#8b5cf6" stroke-width="24"
+                  stroke-dasharray="198 242" stroke-dashoffset="0"
+                  transform="rotate(-90 90 90)"/>
+                <!-- Sonnet 40% -->
+                <circle cx="90" cy="90" r="70" fill="none" stroke="#3b82f6" stroke-width="24"
+                  stroke-dasharray="176 264" stroke-dashoffset="-198"
+                  transform="rotate(-90 90 90)"/>
+                <!-- Haiku 15% -->
+                <circle cx="90" cy="90" r="70" fill="none" stroke="#22d3ee" stroke-width="24"
+                  stroke-dasharray="66 374" stroke-dashoffset="-374"
+                  transform="rotate(-90 90 90)"/>
+                <!-- 中央テキスト -->
+                <text x="90" y="84" text-anchor="middle" fill="#e2e8f0" font-size="18" font-weight="800">2.57M</text>
+                <text x="90" y="102" text-anchor="middle" fill="#94a3b8" font-size="10">総トークン</text>
+              </svg>
+              <div class="donut-legend">
+                <div class="donut-legend-item">
+                  <span class="donut-legend-color" style="background:#8b5cf6"></span>
+                  Opus 45%
+                </div>
+                <div class="donut-legend-item">
+                  <span class="donut-legend-color" style="background:#3b82f6"></span>
+                  Sonnet 40%
+                </div>
+                <div class="donut-legend-item">
+                  <span class="donut-legend-color" style="background:#22d3ee"></span>
+                  Haiku 15%
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- トークン種別内訳 -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">トークン種別内訳</span>
+          </div>
+          <div class="card-body">
+            <div class="donut-chart">
+              <svg viewBox="0 0 180 180" width="180" height="180" xmlns="http://www.w3.org/2000/svg">
+                <!-- input 55% -->
+                <circle cx="90" cy="90" r="70" fill="none" stroke="#3b82f6" stroke-width="24"
+                  stroke-dasharray="242 198" stroke-dashoffset="0"
+                  transform="rotate(-90 90 90)"/>
+                <!-- output 16% -->
+                <circle cx="90" cy="90" r="70" fill="none" stroke="#f59e0b" stroke-width="24"
+                  stroke-dasharray="70 370" stroke-dashoffset="-242"
+                  transform="rotate(-90 90 90)"/>
+                <!-- cache_create 13% -->
+                <circle cx="90" cy="90" r="70" fill="none" stroke="#8b5cf6" stroke-width="24"
+                  stroke-dasharray="57 383" stroke-dashoffset="-312"
+                  transform="rotate(-90 90 90)"/>
+                <!-- cache_read 16% -->
+                <circle cx="90" cy="90" r="70" fill="none" stroke="#22c55e" stroke-width="24"
+                  stroke-dasharray="70 370" stroke-dashoffset="-369"
+                  transform="rotate(-90 90 90)"/>
+                <!-- 中央テキスト -->
+                <text x="90" y="84" text-anchor="middle" fill="#e2e8f0" font-size="18" font-weight="800">2.57M</text>
+                <text x="90" y="102" text-anchor="middle" fill="#94a3b8" font-size="10">総トークン</text>
+              </svg>
+              <div class="donut-legend">
+                <div class="donut-legend-item">
+                  <span class="donut-legend-color" style="background:#3b82f6"></span>
+                  入力 55%
+                </div>
+                <div class="donut-legend-item">
+                  <span class="donut-legend-color" style="background:#f59e0b"></span>
+                  出力 16%
+                </div>
+                <div class="donut-legend-item">
+                  <span class="donut-legend-color" style="background:#8b5cf6"></span>
+                  キャッシュ作成 13%
+                </div>
+                <div class="donut-legend-item">
+                  <span class="donut-legend-color" style="background:#22c55e"></span>
+                  キャッシュRead 16%
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- メンバー別トークン消費テーブル -->
+      <div class="grid-1">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">メンバー別トークン消費</span>
+          </div>
+          <div class="card-body card-body-flush">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>メンバー</th>
+                  <th class="text-right">入力 <span class="sort-icon">&#x25BC;</span></th>
+                  <th class="text-right">出力</th>
+                  <th class="text-right">キャッシュ作成</th>
+                  <th class="text-right">キャッシュRead</th>
+                  <th class="text-right">合計 <span class="sort-icon active">&#x25BC;</span></th>
+                  <th class="text-right">セッション数</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>田中太郎</td>
+                  <td class="text-right font-mono">380,000</td>
+                  <td class="text-right font-mono">88,000</td>
+                  <td class="text-right font-mono">72,000</td>
+                  <td class="text-right font-mono">65,000</td>
+                  <td class="text-right font-mono" style="font-weight:700;">605,000</td>
+                  <td class="text-right">32</td>
+                </tr>
+                <tr>
+                  <td>鈴木花子</td>
+                  <td class="text-right font-mono">310,000</td>
+                  <td class="text-right font-mono">72,000</td>
+                  <td class="text-right font-mono">58,000</td>
+                  <td class="text-right font-mono">52,000</td>
+                  <td class="text-right font-mono" style="font-weight:700;">492,000</td>
+                  <td class="text-right">28</td>
+                </tr>
+                <tr>
+                  <td>佐藤健一</td>
+                  <td class="text-right font-mono">265,000</td>
+                  <td class="text-right font-mono">62,000</td>
+                  <td class="text-right font-mono">50,000</td>
+                  <td class="text-right font-mono">48,000</td>
+                  <td class="text-right font-mono" style="font-weight:700;">425,000</td>
+                  <td class="text-right">24</td>
+                </tr>
+                <tr>
+                  <td>山田美咲</td>
+                  <td class="text-right font-mono">230,000</td>
+                  <td class="text-right font-mono">55,000</td>
+                  <td class="text-right font-mono">42,000</td>
+                  <td class="text-right font-mono">40,000</td>
+                  <td class="text-right font-mono" style="font-weight:700;">367,000</td>
+                  <td class="text-right">22</td>
+                </tr>
+                <tr>
+                  <td>中村大輔</td>
+                  <td class="text-right font-mono">195,000</td>
+                  <td class="text-right font-mono">48,000</td>
+                  <td class="text-right font-mono">38,000</td>
+                  <td class="text-right font-mono">35,000</td>
+                  <td class="text-right font-mono" style="font-weight:700;">316,000</td>
+                  <td class="text-right">18</td>
+                </tr>
+                <tr>
+                  <td>小林陽子</td>
+                  <td class="text-right font-mono">165,000</td>
+                  <td class="text-right font-mono">40,000</td>
+                  <td class="text-right font-mono">35,000</td>
+                  <td class="text-right font-mono">32,000</td>
+                  <td class="text-right font-mono" style="font-weight:700;">272,000</td>
+                  <td class="text-right">15</td>
+                </tr>
+                <tr>
+                  <td>加藤翔太</td>
+                  <td class="text-right font-mono">140,000</td>
+                  <td class="text-right font-mono">32,000</td>
+                  <td class="text-right font-mono">30,000</td>
+                  <td class="text-right font-mono">28,000</td>
+                  <td class="text-right font-mono" style="font-weight:700;">230,000</td>
+                  <td class="text-right">12</td>
+                </tr>
+                <tr>
+                  <td>伊藤真理</td>
+                  <td class="text-right font-mono">115,000</td>
+                  <td class="text-right font-mono">23,000</td>
+                  <td class="text-right font-mono">25,000</td>
+                  <td class="text-right font-mono">22,000</td>
+                  <td class="text-right font-mono" style="font-weight:700;">185,000</td>
+                  <td class="text-right">5</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- 高トークンセッション Top10 -->
+      <div class="grid-1">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">高トークンセッション Top10</span>
+          </div>
+          <div class="card-body card-body-flush">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>日時</th>
+                  <th>メンバー</th>
+                  <th>モデル</th>
+                  <th class="text-right">入力</th>
+                  <th class="text-right">出力</th>
+                  <th class="text-right">合計 <span class="sort-icon active">&#x25BC;</span></th>
+                  <th>リポジトリ</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="text-muted">1</td>
+                  <td class="text-muted">2026-01-28 10:15</td>
+                  <td>佐藤健一</td>
+                  <td><span class="badge badge-opus">Opus</span></td>
+                  <td class="text-right font-mono">82,400</td>
+                  <td class="text-right font-mono">18,200</td>
+                  <td class="text-right font-mono" style="font-weight:700;">100,600</td>
+                  <td>infra-terraform</td>
+                </tr>
+                <tr>
+                  <td class="text-muted">2</td>
+                  <td class="text-muted">2026-01-25 14:32</td>
+                  <td>田中太郎</td>
+                  <td><span class="badge badge-opus">Opus</span></td>
+                  <td class="text-right font-mono">75,800</td>
+                  <td class="text-right font-mono">16,500</td>
+                  <td class="text-right font-mono" style="font-weight:700;">92,300</td>
+                  <td>frontend-app</td>
+                </tr>
+                <tr>
+                  <td class="text-muted">3</td>
+                  <td class="text-muted">2026-01-22 09:48</td>
+                  <td>鈴木花子</td>
+                  <td><span class="badge badge-opus">Opus</span></td>
+                  <td class="text-right font-mono">68,200</td>
+                  <td class="text-right font-mono">15,800</td>
+                  <td class="text-right font-mono" style="font-weight:700;">84,000</td>
+                  <td>backend-api</td>
+                </tr>
+                <tr>
+                  <td class="text-muted">4</td>
+                  <td class="text-muted">2026-01-30 16:05</td>
+                  <td>田中太郎</td>
+                  <td><span class="badge badge-sonnet">Sonnet</span></td>
+                  <td class="text-right font-mono">62,500</td>
+                  <td class="text-right font-mono">14,200</td>
+                  <td class="text-right font-mono" style="font-weight:700;">76,700</td>
+                  <td>frontend-app</td>
+                </tr>
+                <tr>
+                  <td class="text-muted">5</td>
+                  <td class="text-muted">2026-01-18 11:20</td>
+                  <td>山田美咲</td>
+                  <td><span class="badge badge-opus">Opus</span></td>
+                  <td class="text-right font-mono">58,900</td>
+                  <td class="text-right font-mono">12,800</td>
+                  <td class="text-right font-mono" style="font-weight:700;">71,700</td>
+                  <td>data-pipeline</td>
+                </tr>
+                <tr>
+                  <td class="text-muted">6</td>
+                  <td class="text-muted">2026-01-20 13:45</td>
+                  <td>中村大輔</td>
+                  <td><span class="badge badge-sonnet">Sonnet</span></td>
+                  <td class="text-right font-mono">55,200</td>
+                  <td class="text-right font-mono">11,500</td>
+                  <td class="text-right font-mono" style="font-weight:700;">66,700</td>
+                  <td>backend-api</td>
+                </tr>
+                <tr>
+                  <td class="text-muted">7</td>
+                  <td class="text-muted">2026-01-15 10:00</td>
+                  <td>佐藤健一</td>
+                  <td><span class="badge badge-sonnet">Sonnet</span></td>
+                  <td class="text-right font-mono">50,800</td>
+                  <td class="text-right font-mono">12,200</td>
+                  <td class="text-right font-mono" style="font-weight:700;">63,000</td>
+                  <td>infra-terraform</td>
+                </tr>
+                <tr>
+                  <td class="text-muted">8</td>
+                  <td class="text-muted">2026-01-12 15:30</td>
+                  <td>小林陽子</td>
+                  <td><span class="badge badge-opus">Opus</span></td>
+                  <td class="text-right font-mono">48,600</td>
+                  <td class="text-right font-mono">10,400</td>
+                  <td class="text-right font-mono" style="font-weight:700;">59,000</td>
+                  <td>mobile-app</td>
+                </tr>
+                <tr>
+                  <td class="text-muted">9</td>
+                  <td class="text-muted">2026-01-08 17:12</td>
+                  <td>加藤翔太</td>
+                  <td><span class="badge badge-sonnet">Sonnet</span></td>
+                  <td class="text-right font-mono">45,300</td>
+                  <td class="text-right font-mono">9,800</td>
+                  <td class="text-right font-mono" style="font-weight:700;">55,100</td>
+                  <td>frontend-app</td>
+                </tr>
+                <tr>
+                  <td class="text-muted">10</td>
+                  <td class="text-muted">2026-01-05 09:22</td>
+                  <td>鈴木花子</td>
+                  <td><span class="badge badge-sonnet">Sonnet</span></td>
+                  <td class="text-right font-mono">42,100</td>
+                  <td class="text-right font-mono">9,200</td>
+                  <td class="text-right font-mono" style="font-weight:700;">51,300</td>
+                  <td>backend-api</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /.page-body -->
+  </main>
+
+</div><!-- /.page-layout -->
+</body>
+</html>

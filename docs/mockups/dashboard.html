@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>概要ダッシュボード — Claude Activity Tracker</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page-layout">
+
+  <!-- ===== サイドナビ ===== -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-logo">
+        <div class="sidebar-logo-icon">C</div>
+        <div>
+          <div class="sidebar-logo-text">Activity Tracker</div>
+          <div class="sidebar-logo-sub">Claude 利用分析</div>
+        </div>
+      </div>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="dashboard.html" class="active">
+        <span class="sidebar-nav-icon">&#x1F3E0;</span> 概要ダッシュボード
+      </a>
+      <a href="tokens.html">
+        <span class="sidebar-nav-icon">&#x1F4B0;</span> トークン利用分析
+      </a>
+      <a href="members.html">
+        <span class="sidebar-nav-icon">&#x1F465;</span> メンバー分析
+      </a>
+      <a href="repositories.html">
+        <span class="sidebar-nav-icon">&#x1F4C1;</span> リポジトリ分析
+      </a>
+      <a href="sessions.html">
+        <span class="sidebar-nav-icon">&#x1F4DD;</span> セッション履歴
+      </a>
+      <a href="session-detail.html">
+        <span class="sidebar-nav-icon">&#x1F50D;</span> セッション詳細
+      </a>
+    </nav>
+    <div class="sidebar-footer">
+      v0.1.0 — Mock
+    </div>
+  </aside>
+
+  <!-- ===== メインコンテンツ ===== -->
+  <main class="main-content">
+
+    <!-- フィルターバー -->
+    <div class="filter-bar">
+      <div class="filter-group">
+        <label>期間</label>
+        <input type="date" value="2026-01-01">
+        <span class="text-muted">〜</span>
+        <input type="date" value="2026-01-31">
+      </div>
+      <div class="filter-group">
+        <label>メンバー</label>
+        <select>
+          <option>全メンバー</option>
+          <option>田中太郎</option>
+          <option>鈴木花子</option>
+          <option>佐藤健一</option>
+          <option>山田美咲</option>
+          <option>中村大輔</option>
+          <option>小林陽子</option>
+          <option>加藤翔太</option>
+          <option>伊藤真理</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>リポジトリ</label>
+        <select>
+          <option>全リポジトリ</option>
+          <option>frontend-app</option>
+          <option>backend-api</option>
+          <option>infra-terraform</option>
+          <option>mobile-app</option>
+          <option>data-pipeline</option>
+        </select>
+      </div>
+      <button class="btn btn-primary btn-apply">適用</button>
+    </div>
+
+    <!-- ページヘッダー -->
+    <div class="page-header">
+      <h1>概要ダッシュボード</h1>
+      <p>チーム全体のClaude利用状況を一目で把握</p>
+    </div>
+
+    <div class="page-body">
+
+      <!-- KPIカード -->
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-icon blue">&#x26A1;</div>
+          <div class="kpi-content">
+            <div class="kpi-value">2.4M</div>
+            <div class="kpi-label">月間トークン消費量</div>
+            <div class="kpi-sub"><span class="up">&#x25B2; 12%</span> 前月比</div>
+          </div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-icon green">&#x1F464;</div>
+          <div class="kpi-content">
+            <div class="kpi-value">8<span style="font-size:14px;font-weight:400;color:var(--text-secondary)">名</span></div>
+            <div class="kpi-label">アクティブメンバー数</div>
+            <div class="kpi-sub"><span class="up">&#x25B2; 2名</span> 前月比</div>
+          </div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-icon purple">&#x1F4AC;</div>
+          <div class="kpi-content">
+            <div class="kpi-value">156<span style="font-size:14px;font-weight:400;color:var(--text-secondary)">回</span></div>
+            <div class="kpi-label">セッション数</div>
+            <div class="kpi-sub"><span class="up">&#x25B2; 8%</span> 前月比</div>
+          </div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-icon red">&#x26A0;</div>
+          <div class="kpi-content">
+            <div class="kpi-value">2.3<span style="font-size:14px;font-weight:400;color:var(--text-secondary)">%</span></div>
+            <div class="kpi-label">エラー率</div>
+            <div class="kpi-sub"><span class="down">&#x25BC; 0.5%</span> 前月比</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 日次トークン使用推移チャート -->
+      <div class="grid-1">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">日次トークン使用推移</span>
+            <div style="display:flex;gap:12px;font-size:12px;color:var(--text-secondary);">
+              <span style="display:flex;align-items:center;gap:4px;"><span style="width:10px;height:3px;background:var(--chart-input);border-radius:2px;display:inline-block;"></span> 入力</span>
+              <span style="display:flex;align-items:center;gap:4px;"><span style="width:10px;height:3px;background:var(--chart-output);border-radius:2px;display:inline-block;"></span> 出力</span>
+              <span style="display:flex;align-items:center;gap:4px;"><span style="width:10px;height:3px;background:var(--chart-cache-read);border-radius:2px;display:inline-block;"></span> キャッシュRead</span>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="line-chart-area">
+              <svg viewBox="0 0 800 200" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none" style="height:200px;">
+                <!-- Grid lines -->
+                <line x1="0" y1="50" x2="800" y2="50" stroke="#334155" stroke-width="0.5" stroke-dasharray="4"/>
+                <line x1="0" y1="100" x2="800" y2="100" stroke="#334155" stroke-width="0.5" stroke-dasharray="4"/>
+                <line x1="0" y1="150" x2="800" y2="150" stroke="#334155" stroke-width="0.5" stroke-dasharray="4"/>
+
+                <!-- 入力トークン (青) -->
+                <polyline fill="none" stroke="#3b82f6" stroke-width="2.5" stroke-linejoin="round"
+                  points="0,120 27,115 53,105 80,110 107,95 133,88 160,92 187,80 213,75 240,82 267,70 293,68 320,72 347,65 373,60 400,55 427,62 453,58 480,50 507,48 533,55 560,45 587,42 613,50 640,38 667,40 693,35 720,42 747,38 773,30 800,32"/>
+                <!-- 入力エリア -->
+                <polygon fill="rgba(59,130,246,0.08)"
+                  points="0,120 27,115 53,105 80,110 107,95 133,88 160,92 187,80 213,75 240,82 267,70 293,68 320,72 347,65 373,60 400,55 427,62 453,58 480,50 507,48 533,55 560,45 587,42 613,50 640,38 667,40 693,35 720,42 747,38 773,30 800,32 800,200 0,200"/>
+
+                <!-- 出力トークン (黄) -->
+                <polyline fill="none" stroke="#f59e0b" stroke-width="2.5" stroke-linejoin="round"
+                  points="0,155 27,150 53,148 80,152 107,140 133,138 160,142 187,132 213,130 240,135 267,125 293,122 320,128 347,120 373,118 400,115 427,120 453,116 480,110 507,108 533,112 560,105 587,102 613,108 640,98 667,100 693,95 720,100 747,96 773,90 800,92"/>
+                <!-- 出力エリア -->
+                <polygon fill="rgba(245,158,11,0.06)"
+                  points="0,155 27,150 53,148 80,152 107,140 133,138 160,142 187,132 213,130 240,135 267,125 293,122 320,128 347,120 373,118 400,115 427,120 453,116 480,110 507,108 533,112 560,105 587,102 613,108 640,98 667,100 693,95 720,100 747,96 773,90 800,92 800,200 0,200"/>
+
+                <!-- キャッシュRead (緑) -->
+                <polyline fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linejoin="round"
+                  points="0,170 27,168 53,165 80,168 107,158 133,155 160,160 187,150 213,148 240,152 267,142 293,140 320,145 347,138 373,135 400,132 427,138 453,134 480,128 507,126 533,130 560,122 587,120 613,125 640,118 667,120 693,115 720,120 747,116 773,110 800,112"/>
+                <polygon fill="rgba(34,197,94,0.05)"
+                  points="0,170 27,168 53,165 80,168 107,158 133,155 160,160 187,150 213,148 240,152 267,142 293,140 320,145 347,138 373,135 400,132 427,138 453,134 480,128 507,126 533,130 560,122 587,120 613,125 640,118 667,120 693,115 720,120 747,116 773,110 800,112 800,200 0,200"/>
+
+                <!-- X軸ラベル -->
+                <text x="0" y="195" fill="#64748b" font-size="9">1/1</text>
+                <text x="160" y="195" fill="#64748b" font-size="9">1/7</text>
+                <text x="320" y="195" fill="#64748b" font-size="9">1/13</text>
+                <text x="480" y="195" fill="#64748b" font-size="9">1/19</text>
+                <text x="640" y="195" fill="#64748b" font-size="9">1/25</text>
+                <text x="773" y="195" fill="#64748b" font-size="9">1/31</text>
+              </svg>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- メンバー別 Top5 ＆ リポジトリ別 Top5 -->
+      <div class="grid-2">
+
+        <!-- メンバー別トークン Top5 -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">メンバー別トークン Top5</span>
+          </div>
+          <div class="card-body">
+            <div class="bar-chart-h">
+              <div class="bar-row">
+                <span class="bar-label">田中太郎</span>
+                <div class="bar-track"><div class="bar-fill" style="width:92%;background:var(--chart-input);"></div></div>
+                <span class="bar-value">520K</span>
+              </div>
+              <div class="bar-row">
+                <span class="bar-label">鈴木花子</span>
+                <div class="bar-track"><div class="bar-fill" style="width:78%;background:var(--chart-input);"></div></div>
+                <span class="bar-value">440K</span>
+              </div>
+              <div class="bar-row">
+                <span class="bar-label">佐藤健一</span>
+                <div class="bar-track"><div class="bar-fill" style="width:65%;background:var(--chart-input);"></div></div>
+                <span class="bar-value">368K</span>
+              </div>
+              <div class="bar-row">
+                <span class="bar-label">山田美咲</span>
+                <div class="bar-track"><div class="bar-fill" style="width:55%;background:var(--chart-input);"></div></div>
+                <span class="bar-value">310K</span>
+              </div>
+              <div class="bar-row">
+                <span class="bar-label">中村大輔</span>
+                <div class="bar-track"><div class="bar-fill" style="width:48%;background:var(--chart-input);"></div></div>
+                <span class="bar-value">270K</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- リポジトリ別セッション Top5 -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">リポジトリ別セッション Top5</span>
+          </div>
+          <div class="card-body">
+            <div class="bar-chart-h">
+              <div class="bar-row">
+                <span class="bar-label">frontend-app</span>
+                <div class="bar-track"><div class="bar-fill" style="width:88%;background:var(--chart-sonnet);"></div></div>
+                <span class="bar-value">52回</span>
+              </div>
+              <div class="bar-row">
+                <span class="bar-label">backend-api</span>
+                <div class="bar-track"><div class="bar-fill" style="width:72%;background:var(--chart-sonnet);"></div></div>
+                <span class="bar-value">42回</span>
+              </div>
+              <div class="bar-row">
+                <span class="bar-label">infra-terraform</span>
+                <div class="bar-track"><div class="bar-fill" style="width:50%;background:var(--chart-sonnet);"></div></div>
+                <span class="bar-value">30回</span>
+              </div>
+              <div class="bar-row">
+                <span class="bar-label">mobile-app</span>
+                <div class="bar-track"><div class="bar-fill" style="width:35%;background:var(--chart-sonnet);"></div></div>
+                <span class="bar-value">20回</span>
+              </div>
+              <div class="bar-row">
+                <span class="bar-label">data-pipeline</span>
+                <div class="bar-track"><div class="bar-fill" style="width:20%;background:var(--chart-sonnet);"></div></div>
+                <span class="bar-value">12回</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- 最近のセッション テーブル -->
+      <div class="grid-1">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">最近のセッション</span>
+            <a href="sessions.html" class="btn btn-ghost" style="font-size:12px;">すべて表示 &#x2192;</a>
+          </div>
+          <div class="card-body card-body-flush">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>日時 <span class="sort-icon active">&#x25BC;</span></th>
+                  <th>メンバー</th>
+                  <th>モデル</th>
+                  <th class="text-right">トークン</th>
+                  <th class="text-right">ターン数</th>
+                  <th>リポジトリ</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="text-muted">2026-01-31 17:42</td>
+                  <td>田中太郎</td>
+                  <td><span class="badge badge-opus">Opus</span></td>
+                  <td class="text-right font-mono">48,200</td>
+                  <td class="text-right">12</td>
+                  <td>frontend-app</td>
+                </tr>
+                <tr>
+                  <td class="text-muted">2026-01-31 16:18</td>
+                  <td>鈴木花子</td>
+                  <td><span class="badge badge-sonnet">Sonnet</span></td>
+                  <td class="text-right font-mono">32,150</td>
+                  <td class="text-right">8</td>
+                  <td>backend-api</td>
+                </tr>
+                <tr>
+                  <td class="text-muted">2026-01-31 15:05</td>
+                  <td>佐藤健一</td>
+                  <td><span class="badge badge-opus">Opus</span></td>
+                  <td class="text-right font-mono">55,800</td>
+                  <td class="text-right">15</td>
+                  <td>infra-terraform</td>
+                </tr>
+                <tr>
+                  <td class="text-muted">2026-01-31 14:30</td>
+                  <td>山田美咲</td>
+                  <td><span class="badge badge-sonnet">Sonnet</span></td>
+                  <td class="text-right font-mono">21,400</td>
+                  <td class="text-right">6</td>
+                  <td>frontend-app</td>
+                </tr>
+                <tr>
+                  <td class="text-muted">2026-01-31 13:12</td>
+                  <td>中村大輔</td>
+                  <td><span class="badge badge-haiku">Haiku</span></td>
+                  <td class="text-right font-mono">8,900</td>
+                  <td class="text-right">4</td>
+                  <td>mobile-app</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /.page-body -->
+  </main>
+
+</div><!-- /.page-layout -->
+</body>
+</html>

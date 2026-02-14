@@ -1,0 +1,1119 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>セッション詳細 — Claude Activity Tracker</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    /* セッション詳細ページ固有スタイル */
+
+    /* 戻るリンク */
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      color: var(--text-secondary);
+      padding: 12px 28px;
+      border-bottom: 1px solid var(--border);
+      transition: color var(--transition-fast);
+    }
+    .back-link:hover {
+      color: var(--accent);
+    }
+
+    /* セッションヘッダー情報 */
+    .session-header {
+      padding: 20px 28px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-card);
+    }
+
+    .session-id {
+      font-family: "SF Mono", "Fira Code", monospace;
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 10px;
+    }
+
+    .session-meta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    .session-meta-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .session-meta-item .label {
+      color: var(--text-muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 600;
+    }
+
+    .session-meta-item .value {
+      color: var(--text-primary);
+    }
+
+    /* ターンタイムライン */
+    .timeline {
+      position: relative;
+      padding: 0;
+    }
+
+    .timeline::before {
+      content: '';
+      position: absolute;
+      left: 24px;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: var(--border);
+    }
+
+    /* ターンカード */
+    .turn-card {
+      position: relative;
+      margin-left: 50px;
+      margin-bottom: 24px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-card);
+      overflow: hidden;
+    }
+
+    .turn-card::before {
+      content: '';
+      position: absolute;
+      left: -27px;
+      top: 22px;
+      width: 12px;
+      height: 12px;
+      background: var(--accent);
+      border: 2px solid var(--bg-base);
+      border-radius: 50%;
+      z-index: 2;
+    }
+
+    .turn-card::after {
+      content: '';
+      position: absolute;
+      left: -15px;
+      top: 27px;
+      width: 15px;
+      height: 2px;
+      background: var(--border);
+    }
+
+    .turn-card.has-error::before {
+      background: var(--danger);
+    }
+
+    .turn-card-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      padding: 16px 20px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .turn-number {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .turn-time {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-family: "SF Mono", "Fira Code", monospace;
+    }
+
+    .turn-card-body {
+      padding: 16px 20px;
+    }
+
+    /* プロンプト表示 */
+    .turn-prompt {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      margin-bottom: 14px;
+      padding: 10px 14px;
+      background: rgba(99, 102, 241, 0.08);
+      border-radius: var(--radius-sm);
+      border-left: 3px solid var(--accent);
+    }
+
+    .turn-prompt-icon {
+      font-size: 16px;
+      flex-shrink: 0;
+      line-height: 1.5;
+    }
+
+    .turn-prompt-text {
+      font-size: 13px;
+      color: var(--text-primary);
+      line-height: 1.6;
+    }
+
+    .turn-prompt.auto-response {
+      background: rgba(148, 163, 184, 0.08);
+      border-left-color: var(--text-muted);
+    }
+
+    .turn-prompt.auto-response .turn-prompt-text {
+      color: var(--text-secondary);
+      font-style: italic;
+    }
+
+    /* ターンメタ情報 */
+    .turn-meta {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 16px;
+      font-size: 12px;
+      color: var(--text-muted);
+      flex-wrap: wrap;
+    }
+
+    .turn-meta-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .turn-meta-item .icon {
+      font-size: 13px;
+    }
+
+    /* セクションヘッダー */
+    .section-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+      margin-top: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    .section-label .icon {
+      font-size: 14px;
+    }
+
+    /* ツール使用リスト */
+    .tool-list {
+      margin-bottom: 14px;
+      padding-left: 4px;
+    }
+
+    .tool-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 0;
+      font-size: 12px;
+      color: var(--text-primary);
+    }
+
+    .tool-tree-line {
+      color: var(--text-muted);
+      font-family: "SF Mono", "Fira Code", monospace;
+      flex-shrink: 0;
+      width: 24px;
+      text-align: center;
+    }
+
+    .tool-name {
+      font-family: "SF Mono", "Fira Code", monospace;
+      font-size: 12px;
+      color: var(--text-primary);
+    }
+
+    .tool-args {
+      color: var(--text-muted);
+      font-family: "SF Mono", "Fira Code", monospace;
+      font-size: 11px;
+    }
+
+    .tool-status {
+      margin-left: auto;
+      flex-shrink: 0;
+    }
+
+    .tool-error-msg {
+      margin-left: 36px;
+      padding: 6px 10px;
+      background: rgba(239, 68, 68, 0.08);
+      border-left: 2px solid var(--danger);
+      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+      font-size: 11px;
+      color: var(--danger);
+      font-family: "SF Mono", "Fira Code", monospace;
+      margin-top: -2px;
+      margin-bottom: 4px;
+    }
+
+    /* サブエージェントブロック */
+    .subagent-block {
+      margin-bottom: 14px;
+      margin-left: 4px;
+      border: 1px solid rgba(168, 85, 247, 0.25);
+      border-radius: var(--radius-sm);
+      background: rgba(168, 85, 247, 0.04);
+      overflow: hidden;
+    }
+
+    .subagent-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      border-bottom: 1px solid rgba(168, 85, 247, 0.15);
+      background: rgba(168, 85, 247, 0.06);
+    }
+
+    .subagent-icon {
+      font-size: 14px;
+    }
+
+    .subagent-type {
+      font-size: 11px;
+      font-weight: 700;
+      color: #a855f7;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .subagent-id {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-family: "SF Mono", "Fira Code", monospace;
+    }
+
+    .subagent-body {
+      padding: 12px 14px;
+    }
+
+    .subagent-prompt {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+      font-style: italic;
+    }
+
+    .subagent-meta {
+      display: flex;
+      gap: 12px;
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-bottom: 10px;
+    }
+
+    /* ファイル変更リスト */
+    .file-list {
+      margin-bottom: 6px;
+      padding-left: 4px;
+    }
+
+    .file-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 0;
+      font-size: 12px;
+    }
+
+    .file-path {
+      font-family: "SF Mono", "Fira Code", monospace;
+      font-size: 12px;
+      color: var(--text-primary);
+    }
+
+    .file-action {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+
+    .file-action.edit {
+      background: rgba(59, 130, 246, 0.15);
+      color: #60a5fa;
+    }
+
+    .file-action.create {
+      background: rgba(34, 197, 94, 0.15);
+      color: #22c55e;
+    }
+
+    .file-action.delete {
+      background: rgba(239, 68, 68, 0.15);
+      color: #ef4444;
+    }
+
+    /* セッションイベント */
+    .session-events {
+      position: relative;
+      margin-left: 50px;
+      margin-bottom: 24px;
+    }
+
+    .session-events-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-secondary);
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .event-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .event-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 12px;
+      padding: 6px 12px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+    }
+
+    .event-time {
+      color: var(--text-muted);
+      font-family: "SF Mono", "Fira Code", monospace;
+      flex-shrink: 0;
+      font-size: 11px;
+    }
+
+    .event-text {
+      color: var(--text-secondary);
+    }
+
+    .event-detail {
+      color: var(--text-muted);
+      font-size: 11px;
+    }
+
+    /* サマリー */
+    .session-summary {
+      margin-left: 50px;
+    }
+
+    .summary-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-secondary);
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .summary-content {
+      padding: 16px 20px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      font-size: 13px;
+      color: var(--text-primary);
+      line-height: 1.7;
+    }
+
+    /* セクション区切り */
+    .section-divider {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 32px 0 24px 50px;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .section-divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+  </style>
+</head>
+<body>
+  <div class="page-layout">
+
+    <!-- サイドナビ -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-logo">
+          <div class="sidebar-logo-icon">&#x1F4CA;</div>
+          <div>
+            <div class="sidebar-logo-text">Activity Tracker</div>
+            <div class="sidebar-logo-sub">Claude Usage Analytics</div>
+          </div>
+        </div>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="dashboard.html">
+          <span class="sidebar-nav-icon">&#x1F3E0;</span> 概要
+        </a>
+        <a href="tokens.html">
+          <span class="sidebar-nav-icon">&#x1F4B0;</span> トークン
+        </a>
+        <a href="members.html">
+          <span class="sidebar-nav-icon">&#x1F465;</span> メンバー
+        </a>
+        <a href="repositories.html">
+          <span class="sidebar-nav-icon">&#x1F4C1;</span> リポジトリ
+        </a>
+        <a href="sessions.html">
+          <span class="sidebar-nav-icon">&#x1F4DD;</span> 履歴
+        </a>
+        <a href="session-detail.html" class="active">
+          <span class="sidebar-nav-icon">&#x1F50D;</span> 詳細
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        v0.1.0 &middot; Mock
+      </div>
+    </aside>
+
+    <!-- メインコンテンツ -->
+    <main class="main-content">
+
+      <!-- 戻るリンク -->
+      <a href="sessions.html" class="back-link">
+        &larr; セッション一覧に戻る
+      </a>
+
+      <!-- セッションヘッダー -->
+      <div class="session-header">
+        <div class="session-id">セッション: abc-def-123</div>
+        <div class="session-meta-row">
+          <div class="session-meta-item">
+            <span class="label">メンバー</span>
+            <span class="value">田中太郎</span>
+          </div>
+          <div class="session-meta-item">
+            <span class="label">モデル</span>
+            <span class="badge badge-opus">claude-opus-4-6</span>
+          </div>
+          <div class="session-meta-item">
+            <span class="label">リポジトリ</span>
+            <span class="value font-mono" style="font-size: 12px;">my-app</span>
+          </div>
+          <div class="session-meta-item">
+            <span class="label">ブランチ</span>
+            <span class="value font-mono" style="font-size: 12px;">feature/auth</span>
+          </div>
+          <div class="session-meta-item">
+            <span class="label">開始</span>
+            <span class="value">2/12 14:23</span>
+          </div>
+          <div class="session-meta-item">
+            <span class="label">終了</span>
+            <span class="value">2/12 15:01</span>
+          </div>
+          <div class="session-meta-item">
+            <span class="label">所要時間</span>
+            <span class="value" style="color: var(--warning);">38分</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="page-body">
+
+        <!-- KPIカード -->
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-icon blue">&#x1F4E5;</div>
+            <div class="kpi-content">
+              <div class="kpi-value">45,230</div>
+              <div class="kpi-label">入力トークン</div>
+              <div class="kpi-sub">キャッシュ読込: 12,400</div>
+            </div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-icon green">&#x1F4E4;</div>
+            <div class="kpi-content">
+              <div class="kpi-value">12,100</div>
+              <div class="kpi-label">出力トークン</div>
+              <div class="kpi-sub">推定コスト: $0.82</div>
+            </div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-icon purple">&#x1F504;</div>
+            <div class="kpi-content">
+              <div class="kpi-value">8</div>
+              <div class="kpi-label">ターン数</div>
+              <div class="kpi-sub">自動応答: 4回</div>
+            </div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-icon amber">&#x1F527;</div>
+            <div class="kpi-content">
+              <div class="kpi-value">23</div>
+              <div class="kpi-label">ツール使用</div>
+              <div class="kpi-sub">エラー: 1回</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ターンタイムライン セクションヘッダー -->
+        <div class="section-divider">ターンタイムライン</div>
+
+        <!-- タイムライン -->
+        <div class="timeline">
+
+          <!-- ===== Turn 1 ===== -->
+          <div class="turn-card">
+            <div class="turn-card-header">
+              <span class="turn-number">Turn 1</span>
+              <span class="turn-time">14:23</span>
+            </div>
+            <div class="turn-card-body">
+              <!-- プロンプト -->
+              <div class="turn-prompt">
+                <span class="turn-prompt-icon">&#x1F4AC;</span>
+                <span class="turn-prompt-text">認証機能を実装してください</span>
+              </div>
+
+              <!-- メタ情報 -->
+              <div class="turn-meta">
+                <span class="turn-meta-item"><span class="icon">&#x23F1;</span> 12.3s</span>
+                <span class="turn-meta-item"><span class="icon">&#x1F4E5;</span> 入力: 5,200</span>
+                <span class="turn-meta-item"><span class="icon">&#x1F4E4;</span> 出力: 1,800</span>
+              </div>
+
+              <!-- ツール使用 -->
+              <div class="section-label"><span class="icon">&#x1F527;</span> ツール使用</div>
+              <div class="tool-list">
+                <div class="tool-item">
+                  <span class="tool-tree-line">&#x251C;&#x2500;</span>
+                  <span class="tool-name">Read</span>
+                  <span class="tool-args">src/auth/login.ts</span>
+                  <span class="tool-status"><span class="badge badge-success">success</span></span>
+                </div>
+                <div class="tool-item">
+                  <span class="tool-tree-line">&#x251C;&#x2500;</span>
+                  <span class="tool-name">Grep</span>
+                  <span class="tool-args">"authenticate" src/</span>
+                  <span class="tool-status"><span class="badge badge-success">success</span></span>
+                </div>
+                <div class="tool-item">
+                  <span class="tool-tree-line">&#x2514;&#x2500;</span>
+                  <span class="tool-name">Edit</span>
+                  <span class="tool-args">src/auth/login.ts</span>
+                  <span class="tool-status"><span class="badge badge-success">success</span></span>
+                </div>
+              </div>
+
+              <!-- ファイル変更 -->
+              <div class="section-label"><span class="icon">&#x1F4C1;</span> ファイル変更</div>
+              <div class="file-list">
+                <div class="file-item">
+                  <span class="tool-tree-line">&#x2514;&#x2500;</span>
+                  <span class="file-path">src/auth/login.ts</span>
+                  <span class="file-action edit">edit</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ===== Turn 2 ===== -->
+          <div class="turn-card">
+            <div class="turn-card-header">
+              <span class="turn-number">Turn 2</span>
+              <span class="turn-time">14:25</span>
+            </div>
+            <div class="turn-card-body">
+              <!-- プロンプト -->
+              <div class="turn-prompt">
+                <span class="turn-prompt-icon">&#x1F4AC;</span>
+                <span class="turn-prompt-text">テストも追加してください</span>
+              </div>
+
+              <!-- メタ情報 -->
+              <div class="turn-meta">
+                <span class="turn-meta-item"><span class="icon">&#x23F1;</span> 28.5s</span>
+                <span class="turn-meta-item"><span class="icon">&#x1F4E5;</span> 入力: 8,100</span>
+                <span class="turn-meta-item"><span class="icon">&#x1F4E4;</span> 出力: 3,200</span>
+              </div>
+
+              <!-- サブエージェント -->
+              <div class="section-label"><span class="icon">&#x1F916;</span> サブエージェント</div>
+              <div class="subagent-block">
+                <div class="subagent-header">
+                  <span class="subagent-icon">&#x1F916;</span>
+                  <span class="subagent-type">Explore</span>
+                  <span class="subagent-id">(agent-xyz)</span>
+                </div>
+                <div class="subagent-body">
+                  <div class="subagent-prompt">"テストパターンを調査"</div>
+                  <div class="subagent-meta">
+                    <span>&#x23F1; 15.2s</span>
+                    <span>&#x1F4E5; 入力: 3,000</span>
+                    <span>&#x1F4E4; 出力: 1,200</span>
+                  </div>
+
+                  <!-- サブエージェント内のツール使用 -->
+                  <div class="section-label" style="font-size: 11px;"><span class="icon">&#x1F527;</span> ツール</div>
+                  <div class="tool-list">
+                    <div class="tool-item">
+                      <span class="tool-tree-line">&#x251C;&#x2500;</span>
+                      <span class="tool-name">Glob</span>
+                      <span class="tool-args">**/*.test.ts</span>
+                      <span class="tool-status"><span class="badge badge-success">success</span></span>
+                    </div>
+                    <div class="tool-item">
+                      <span class="tool-tree-line">&#x2514;&#x2500;</span>
+                      <span class="tool-name">Read</span>
+                      <span class="tool-args">src/test/auth.test.ts</span>
+                      <span class="tool-status"><span class="badge badge-success">success</span></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- メインのツール使用 -->
+              <div class="section-label"><span class="icon">&#x1F527;</span> ツール使用（メイン）</div>
+              <div class="tool-list">
+                <div class="tool-item">
+                  <span class="tool-tree-line">&#x251C;&#x2500;</span>
+                  <span class="tool-name">Write</span>
+                  <span class="tool-args">src/test/login.test.ts</span>
+                  <span class="tool-status"><span class="badge badge-success">success</span></span>
+                </div>
+                <div class="tool-item">
+                  <span class="tool-tree-line">&#x2514;&#x2500;</span>
+                  <span class="tool-name">Bash</span>
+                  <span class="tool-args">npm test</span>
+                  <span class="tool-status"><span class="badge badge-success">success</span></span>
+                </div>
+              </div>
+
+              <!-- ファイル変更 -->
+              <div class="section-label"><span class="icon">&#x1F4C1;</span> ファイル変更</div>
+              <div class="file-list">
+                <div class="file-item">
+                  <span class="tool-tree-line">&#x2514;&#x2500;</span>
+                  <span class="file-path">src/test/login.test.ts</span>
+                  <span class="file-action create">create</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ===== Turn 3 (with error) ===== -->
+          <div class="turn-card has-error">
+            <div class="turn-card-header">
+              <span class="turn-number">Turn 3</span>
+              <span class="turn-time">14:28</span>
+            </div>
+            <div class="turn-card-body">
+              <!-- プロンプト -->
+              <div class="turn-prompt">
+                <span class="turn-prompt-icon">&#x1F4AC;</span>
+                <span class="turn-prompt-text">エラーハンドリングも追加して</span>
+              </div>
+
+              <!-- メタ情報 -->
+              <div class="turn-meta">
+                <span class="turn-meta-item"><span class="icon">&#x23F1;</span> 8.7s</span>
+                <span class="turn-meta-item"><span class="icon">&#x1F4E5;</span> 入力: 6,500</span>
+                <span class="turn-meta-item"><span class="icon">&#x1F4E4;</span> 出力: 2,100</span>
+              </div>
+
+              <!-- ツール使用 -->
+              <div class="section-label"><span class="icon">&#x1F527;</span> ツール使用</div>
+              <div class="tool-list">
+                <div class="tool-item">
+                  <span class="tool-tree-line">&#x251C;&#x2500;</span>
+                  <span class="tool-name">Read</span>
+                  <span class="tool-args">src/auth/login.ts</span>
+                  <span class="tool-status"><span class="badge badge-success">success</span></span>
+                </div>
+                <div class="tool-item">
+                  <span class="tool-tree-line">&#x251C;&#x2500;</span>
+                  <span class="tool-name">Edit</span>
+                  <span class="tool-args">src/auth/login.ts</span>
+                  <span class="tool-status"><span class="badge badge-success">success</span></span>
+                </div>
+                <div class="tool-item">
+                  <span class="tool-tree-line">&#x2514;&#x2500;</span>
+                  <span class="tool-name">Bash</span>
+                  <span class="tool-args">npm test</span>
+                  <span class="tool-status"><span class="badge badge-danger">error</span></span>
+                </div>
+                <div class="tool-error-msg">Test failed: expected 200 got 401</div>
+              </div>
+
+              <!-- ファイル変更 -->
+              <div class="section-label"><span class="icon">&#x1F4C1;</span> ファイル変更</div>
+              <div class="file-list">
+                <div class="file-item">
+                  <span class="tool-tree-line">&#x2514;&#x2500;</span>
+                  <span class="file-path">src/auth/login.ts</span>
+                  <span class="file-action edit">edit</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ===== Turn 4 (auto response) ===== -->
+          <div class="turn-card">
+            <div class="turn-card-header">
+              <span class="turn-number">Turn 4</span>
+              <span class="turn-time">14:30</span>
+            </div>
+            <div class="turn-card-body">
+              <!-- プロンプト（自動応答） -->
+              <div class="turn-prompt auto-response">
+                <span class="turn-prompt-icon">&#x1F504;</span>
+                <span class="turn-prompt-text">(自動応答 -- テスト失敗の修正)</span>
+              </div>
+
+              <!-- メタ情報 -->
+              <div class="turn-meta">
+                <span class="turn-meta-item"><span class="icon">&#x23F1;</span> 5.2s</span>
+                <span class="turn-meta-item"><span class="icon">&#x1F4E5;</span> 入力: 7,200</span>
+                <span class="turn-meta-item"><span class="icon">&#x1F4E4;</span> 出力: 1,500</span>
+              </div>
+
+              <!-- ツール使用 -->
+              <div class="section-label"><span class="icon">&#x1F527;</span> ツール使用</div>
+              <div class="tool-list">
+                <div class="tool-item">
+                  <span class="tool-tree-line">&#x251C;&#x2500;</span>
+                  <span class="tool-name">Edit</span>
+                  <span class="tool-args">src/auth/login.ts</span>
+                  <span class="tool-status"><span class="badge badge-success">success</span></span>
+                </div>
+                <div class="tool-item">
+                  <span class="tool-tree-line">&#x2514;&#x2500;</span>
+                  <span class="tool-name">Bash</span>
+                  <span class="tool-args">npm test</span>
+                  <span class="tool-status"><span class="badge badge-success">success</span></span>
+                </div>
+              </div>
+
+              <!-- ファイル変更 -->
+              <div class="section-label"><span class="icon">&#x1F4C1;</span> ファイル変更</div>
+              <div class="file-list">
+                <div class="file-item">
+                  <span class="tool-tree-line">&#x2514;&#x2500;</span>
+                  <span class="file-path">src/auth/login.ts</span>
+                  <span class="file-action edit">edit</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ===== Turn 5 ===== -->
+          <div class="turn-card">
+            <div class="turn-card-header">
+              <span class="turn-number">Turn 5</span>
+              <span class="turn-time">14:33</span>
+            </div>
+            <div class="turn-card-body">
+              <div class="turn-prompt">
+                <span class="turn-prompt-icon">&#x1F4AC;</span>
+                <span class="turn-prompt-text">JWTのリフレッシュトークンも対応してほしい</span>
+              </div>
+
+              <div class="turn-meta">
+                <span class="turn-meta-item"><span class="icon">&#x23F1;</span> 18.6s</span>
+                <span class="turn-meta-item"><span class="icon">&#x1F4E5;</span> 入力: 5,800</span>
+                <span class="turn-meta-item"><span class="icon">&#x1F4E4;</span> 出力: 2,400</span>
+              </div>
+
+              <!-- サブエージェント -->
+              <div class="section-label"><span class="icon">&#x1F916;</span> サブエージェント</div>
+              <div class="subagent-block">
+                <div class="subagent-header">
+                  <span class="subagent-icon">&#x1F916;</span>
+                  <span class="subagent-type">Explore</span>
+                  <span class="subagent-id">(agent-abc)</span>
+                </div>
+                <div class="subagent-body">
+                  <div class="subagent-prompt">"JWT refresh tokenの既存実装を確認"</div>
+                  <div class="subagent-meta">
+                    <span>&#x23F1; 8.4s</span>
+                    <span>&#x1F4E5; 入力: 2,100</span>
+                    <span>&#x1F4E4; 出力: 800</span>
+                  </div>
+                  <div class="section-label" style="font-size: 11px;"><span class="icon">&#x1F527;</span> ツール</div>
+                  <div class="tool-list">
+                    <div class="tool-item">
+                      <span class="tool-tree-line">&#x251C;&#x2500;</span>
+                      <span class="tool-name">Grep</span>
+                      <span class="tool-args">"refreshToken" src/</span>
+                      <span class="tool-status"><span class="badge badge-success">success</span></span>
+                    </div>
+                    <div class="tool-item">
+                      <span class="tool-tree-line">&#x2514;&#x2500;</span>
+                      <span class="tool-name">Read</span>
+                      <span class="tool-args">src/auth/token.ts</span>
+                      <span class="tool-status"><span class="badge badge-success">success</span></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="section-label"><span class="icon">&#x1F527;</span> ツール使用（メイン）</div>
+              <div class="tool-list">
+                <div class="tool-item">
+                  <span class="tool-tree-line">&#x251C;&#x2500;</span>
+                  <span class="tool-name">Edit</span>
+                  <span class="tool-args">src/auth/token.ts</span>
+                  <span class="tool-status"><span class="badge badge-success">success</span></span>
+                </div>
+                <div class="tool-item">
+                  <span class="tool-tree-line">&#x2514;&#x2500;</span>
+                  <span class="tool-name">Edit</span>
+                  <span class="tool-args">src/auth/login.ts</span>
+                  <span class="tool-status"><span class="badge badge-success">success</span></span>
+                </div>
+              </div>
+
+              <div class="section-label"><span class="icon">&#x1F4C1;</span> ファイル変更</div>
+              <div class="file-list">
+                <div class="file-item">
+                  <span class="tool-tree-line">&#x251C;&#x2500;</span>
+                  <span class="file-path">src/auth/token.ts</span>
+                  <span class="file-action edit">edit</span>
+                </div>
+                <div class="file-item">
+                  <span class="tool-tree-line">&#x2514;&#x2500;</span>
+                  <span class="file-path">src/auth/login.ts</span>
+                  <span class="file-action edit">edit</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ===== Turn 6 (auto response) ===== -->
+          <div class="turn-card">
+            <div class="turn-card-header">
+              <span class="turn-number">Turn 6</span>
+              <span class="turn-time">14:38</span>
+            </div>
+            <div class="turn-card-body">
+              <div class="turn-prompt auto-response">
+                <span class="turn-prompt-icon">&#x1F504;</span>
+                <span class="turn-prompt-text">(自動応答 -- リフレッシュトークンのテスト追加)</span>
+              </div>
+
+              <div class="turn-meta">
+                <span class="turn-meta-item"><span class="icon">&#x23F1;</span> 6.1s</span>
+                <span class="turn-meta-item"><span class="icon">&#x1F4E5;</span> 入力: 4,800</span>
+                <span class="turn-meta-item"><span class="icon">&#x1F4E4;</span> 出力: 1,100</span>
+              </div>
+
+              <div class="section-label"><span class="icon">&#x1F527;</span> ツール使用</div>
+              <div class="tool-list">
+                <div class="tool-item">
+                  <span class="tool-tree-line">&#x251C;&#x2500;</span>
+                  <span class="tool-name">Write</span>
+                  <span class="tool-args">src/test/token.test.ts</span>
+                  <span class="tool-status"><span class="badge badge-success">success</span></span>
+                </div>
+                <div class="tool-item">
+                  <span class="tool-tree-line">&#x2514;&#x2500;</span>
+                  <span class="tool-name">Bash</span>
+                  <span class="tool-args">npm test</span>
+                  <span class="tool-status"><span class="badge badge-success">success</span></span>
+                </div>
+              </div>
+
+              <div class="section-label"><span class="icon">&#x1F4C1;</span> ファイル変更</div>
+              <div class="file-list">
+                <div class="file-item">
+                  <span class="tool-tree-line">&#x2514;&#x2500;</span>
+                  <span class="file-path">src/test/token.test.ts</span>
+                  <span class="file-action create">create</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ===== Turn 7 ===== -->
+          <div class="turn-card">
+            <div class="turn-card-header">
+              <span class="turn-number">Turn 7</span>
+              <span class="turn-time">14:45</span>
+            </div>
+            <div class="turn-card-body">
+              <div class="turn-prompt">
+                <span class="turn-prompt-icon">&#x1F4AC;</span>
+                <span class="turn-prompt-text">ログアウト処理とセッション無効化も実装して</span>
+              </div>
+
+              <div class="turn-meta">
+                <span class="turn-meta-item"><span class="icon">&#x23F1;</span> 14.2s</span>
+                <span class="turn-meta-item"><span class="icon">&#x1F4E5;</span> 入力: 4,130</span>
+                <span class="turn-meta-item"><span class="icon">&#x1F4E4;</span> 出力: 1,700</span>
+              </div>
+
+              <div class="section-label"><span class="icon">&#x1F527;</span> ツール使用</div>
+              <div class="tool-list">
+                <div class="tool-item">
+                  <span class="tool-tree-line">&#x251C;&#x2500;</span>
+                  <span class="tool-name">Write</span>
+                  <span class="tool-args">src/auth/logout.ts</span>
+                  <span class="tool-status"><span class="badge badge-success">success</span></span>
+                </div>
+                <div class="tool-item">
+                  <span class="tool-tree-line">&#x251C;&#x2500;</span>
+                  <span class="tool-name">Edit</span>
+                  <span class="tool-args">src/auth/index.ts</span>
+                  <span class="tool-status"><span class="badge badge-success">success</span></span>
+                </div>
+                <div class="tool-item">
+                  <span class="tool-tree-line">&#x2514;&#x2500;</span>
+                  <span class="tool-name">Bash</span>
+                  <span class="tool-args">npm test</span>
+                  <span class="tool-status"><span class="badge badge-success">success</span></span>
+                </div>
+              </div>
+
+              <div class="section-label"><span class="icon">&#x1F4C1;</span> ファイル変更</div>
+              <div class="file-list">
+                <div class="file-item">
+                  <span class="tool-tree-line">&#x251C;&#x2500;</span>
+                  <span class="file-path">src/auth/logout.ts</span>
+                  <span class="file-action create">create</span>
+                </div>
+                <div class="file-item">
+                  <span class="tool-tree-line">&#x2514;&#x2500;</span>
+                  <span class="file-path">src/auth/index.ts</span>
+                  <span class="file-action edit">edit</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ===== Turn 8 ===== -->
+          <div class="turn-card">
+            <div class="turn-card-header">
+              <span class="turn-number">Turn 8</span>
+              <span class="turn-time">14:52</span>
+            </div>
+            <div class="turn-card-body">
+              <div class="turn-prompt">
+                <span class="turn-prompt-icon">&#x1F4AC;</span>
+                <span class="turn-prompt-text">最後にコードレビューして問題があれば修正してください</span>
+              </div>
+
+              <div class="turn-meta">
+                <span class="turn-meta-item"><span class="icon">&#x23F1;</span> 22.1s</span>
+                <span class="turn-meta-item"><span class="icon">&#x1F4E5;</span> 入力: 3,500</span>
+                <span class="turn-meta-item"><span class="icon">&#x1F4E4;</span> 出力: 1,300</span>
+              </div>
+
+              <div class="section-label"><span class="icon">&#x1F527;</span> ツール使用</div>
+              <div class="tool-list">
+                <div class="tool-item">
+                  <span class="tool-tree-line">&#x251C;&#x2500;</span>
+                  <span class="tool-name">Read</span>
+                  <span class="tool-args">src/auth/login.ts</span>
+                  <span class="tool-status"><span class="badge badge-success">success</span></span>
+                </div>
+                <div class="tool-item">
+                  <span class="tool-tree-line">&#x251C;&#x2500;</span>
+                  <span class="tool-name">Read</span>
+                  <span class="tool-args">src/auth/token.ts</span>
+                  <span class="tool-status"><span class="badge badge-success">success</span></span>
+                </div>
+                <div class="tool-item">
+                  <span class="tool-tree-line">&#x251C;&#x2500;</span>
+                  <span class="tool-name">Read</span>
+                  <span class="tool-args">src/auth/logout.ts</span>
+                  <span class="tool-status"><span class="badge badge-success">success</span></span>
+                </div>
+                <div class="tool-item">
+                  <span class="tool-tree-line">&#x2514;&#x2500;</span>
+                  <span class="tool-name">Edit</span>
+                  <span class="tool-args">src/auth/login.ts</span>
+                  <span class="tool-status"><span class="badge badge-success">success</span></span>
+                </div>
+              </div>
+
+              <div class="section-label"><span class="icon">&#x1F4C1;</span> ファイル変更</div>
+              <div class="file-list">
+                <div class="file-item">
+                  <span class="tool-tree-line">&#x2514;&#x2500;</span>
+                  <span class="file-path">src/auth/login.ts</span>
+                  <span class="file-action edit">edit</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div><!-- /.timeline -->
+
+        <!-- セッションイベント -->
+        <div class="section-divider">セッションイベント</div>
+
+        <div class="session-events">
+          <div class="event-list">
+            <div class="event-item">
+              <span class="event-time">14:23</span>
+              <span class="event-text">セッション開始</span>
+              <span class="event-detail">(claude-opus-4-6, default)</span>
+            </div>
+            <div class="event-item">
+              <span class="event-time">14:35</span>
+              <span class="event-text" style="color: var(--warning);">コンパクト実行</span>
+              <span class="event-detail">コンテキスト圧縮を実施</span>
+            </div>
+            <div class="event-item">
+              <span class="event-time">15:01</span>
+              <span class="event-text">セッション終了</span>
+              <span class="event-detail">(user_exit)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- サマリー -->
+        <div class="section-divider">サマリー</div>
+
+        <div class="session-summary">
+          <div class="summary-content">
+            認証機能の実装とテストを完了。JWT認証のログイン・ログアウト・リフレッシュトークンの一連のフローを実装し、
+            ユニットテストも追加。途中テスト失敗が1件発生したが、自動修正で解決。エラーハンドリングとセッション無効化
+            処理も追加し、最終的なコードレビューで軽微な修正を実施。変更ファイル: login.ts, token.ts, logout.ts, index.ts,
+            login.test.ts, token.test.ts
+          </div>
+        </div>
+
+      </div><!-- /.page-body -->
+    </main>
+  </div>
+</body>
+</html>

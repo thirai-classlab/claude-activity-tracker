@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>リポジトリ分析 — Claude Activity Tracker</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    /* リポジトリ分析ページ固有スタイル */
+
+    /* 展開行のハイライト */
+    .data-table tbody tr.expanded {
+      background: var(--accent-light);
+    }
+    .data-table tbody tr.expanded td {
+      border-bottom-color: var(--accent);
+    }
+
+    .expand-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      background: var(--bg-input);
+      border-radius: var(--radius-sm);
+      font-size: 10px;
+      color: var(--text-muted);
+      cursor: pointer;
+    }
+    .expand-icon.open {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .repo-url {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-weight: 400;
+    }
+
+    /* リポジトリ詳細展開パネル */
+    .repo-detail {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-card);
+      overflow: hidden;
+      margin-bottom: 20px;
+    }
+    .repo-detail-header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    .repo-detail-header .repo-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: var(--radius-sm);
+      background: var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-weight: 700;
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+    .repo-detail-header h3 {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 2px;
+    }
+    .repo-detail-header .sub {
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+    .repo-detail-header .sub a {
+      color: var(--accent);
+    }
+    .repo-detail-body {
+      padding: 20px;
+    }
+
+    .detail-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    /* ミニチャート */
+    .mini-chart {
+      background: var(--bg-base);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 16px;
+    }
+    .mini-chart-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 14px;
+    }
+
+    /* 縦棒バーチャート */
+    .v-bar-chart {
+      display: flex;
+      align-items: flex-end;
+      gap: 4px;
+      height: 110px;
+    }
+    .v-bar-chart .col {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-end;
+      height: 100%;
+    }
+    .v-bar-chart .col .bar {
+      width: 100%;
+      border-radius: 3px 3px 0 0;
+      min-height: 2px;
+      transition: height var(--transition-normal);
+    }
+    .v-bar-chart .col .label {
+      font-size: 9px;
+      color: var(--text-muted);
+      margin-top: 4px;
+      white-space: nowrap;
+    }
+
+    /* ドーナツチャート(CSS conic-gradient) */
+    .donut-wrap {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+    .donut-ring {
+      width: 90px;
+      height: 90px;
+      border-radius: 50%;
+      position: relative;
+      flex-shrink: 0;
+    }
+    .donut-ring::after {
+      content: '';
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      background: var(--bg-base);
+    }
+    .donut-legend {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .donut-legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+    .donut-legend-color {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    /* セクションタイトル */
+    .detail-section-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 10px;
+    }
+    .detail-section-title:not(:first-child) {
+      margin-top: 20px;
+    }
+
+    /* ブランチコード */
+    .branch-name {
+      display: inline-block;
+      background: var(--bg-input);
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-family: "SF Mono", "Fira Code", monospace;
+      font-size: 12px;
+      color: var(--text-primary);
+    }
+  </style>
+</head>
+<body>
+<div class="page-layout">
+
+  <!-- ===== サイドナビ ===== -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-logo">
+        <div class="sidebar-logo-icon">C</div>
+        <div>
+          <div class="sidebar-logo-text">Activity Tracker</div>
+          <div class="sidebar-logo-sub">Claude 利用分析</div>
+        </div>
+      </div>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="dashboard.html">
+        <span class="sidebar-nav-icon">&#x1F3E0;</span> 概要ダッシュボード
+      </a>
+      <a href="tokens.html">
+        <span class="sidebar-nav-icon">&#x1F4B0;</span> トークン利用分析
+      </a>
+      <a href="members.html">
+        <span class="sidebar-nav-icon">&#x1F465;</span> メンバー分析
+      </a>
+      <a href="repositories.html" class="active">
+        <span class="sidebar-nav-icon">&#x1F4C1;</span> リポジトリ分析
+      </a>
+      <a href="sessions.html">
+        <span class="sidebar-nav-icon">&#x1F4DD;</span> セッション履歴
+      </a>
+      <a href="session-detail.html">
+        <span class="sidebar-nav-icon">&#x1F50D;</span> セッション詳細
+      </a>
+    </nav>
+    <div class="sidebar-footer">
+      v0.1.0 — Mock
+    </div>
+  </aside>
+
+  <!-- ===== メインコンテンツ ===== -->
+  <main class="main-content">
+
+    <!-- フィルターバー -->
+    <div class="filter-bar">
+      <div class="filter-group">
+        <label>期間</label>
+        <select>
+          <option>過去7日</option>
+          <option selected>過去30日</option>
+          <option>過去90日</option>
+          <option>カスタム</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>メンバー</label>
+        <select>
+          <option selected>全メンバー</option>
+          <option>田中太郎</option>
+          <option>鈴木花子</option>
+          <option>佐藤次郎</option>
+          <option>山田一郎</option>
+          <option>高橋美咲</option>
+          <option>伊藤健太</option>
+          <option>渡辺さくら</option>
+          <option>中村翔太</option>
+        </select>
+      </div>
+      <button class="btn btn-primary btn-apply">適用</button>
+    </div>
+
+    <!-- ページヘッダー -->
+    <div class="page-header">
+      <h1>リポジトリ分析</h1>
+      <p>リポジトリ単位でClaude Codeの利用状況を分析し、プロジェクトごとの活用度を把握</p>
+    </div>
+
+    <div class="page-body">
+
+      <!-- ===== KPIカード ===== -->
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-icon blue">&#x1F4C1;</div>
+          <div class="kpi-content">
+            <div class="kpi-value">5</div>
+            <div class="kpi-label">リポジトリ数</div>
+            <div class="kpi-sub">アクティブなリポジトリ</div>
+          </div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-icon purple">&#x1F4AC;</div>
+          <div class="kpi-content">
+            <div class="kpi-value">686<span style="font-size:14px;font-weight:400;color:var(--text-secondary)">回</span></div>
+            <div class="kpi-label">総セッション</div>
+            <div class="kpi-sub">過去30日間</div>
+          </div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-icon amber">&#x26A1;</div>
+          <div class="kpi-content">
+            <div class="kpi-value">11.3M</div>
+            <div class="kpi-label">総トークン</div>
+            <div class="kpi-sub">全リポジトリ合計</div>
+          </div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-icon green">&#x1F464;</div>
+          <div class="kpi-content">
+            <div class="kpi-value">8<span style="font-size:14px;font-weight:400;color:var(--text-secondary)">名</span></div>
+            <div class="kpi-label">アクティブメンバー</div>
+            <div class="kpi-sub">1回以上利用</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== リポジトリ別テーブル ===== -->
+      <div class="grid-1">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">リポジトリ別セッション・トークン</span>
+            <span style="font-size:12px;color:var(--text-muted);">5リポジトリ / 過去30日</span>
+          </div>
+          <div class="card-body card-body-flush">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th style="width:36px;"></th>
+                  <th>リポジトリ名</th>
+                  <th class="text-right">セッション数</th>
+                  <th class="text-right">トークン合計</th>
+                  <th class="text-right">メンバー数</th>
+                  <th>最多利用メンバー</th>
+                  <th>最終利用</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="expanded">
+                  <td><span class="expand-icon open">&#x25BC;</span></td>
+                  <td>
+                    <strong>my-app</strong>
+                    <div class="repo-url">github.com/team/my-app</div>
+                  </td>
+                  <td class="text-right font-mono">245</td>
+                  <td class="text-right font-mono">4,120,000</td>
+                  <td class="text-right font-mono">7</td>
+                  <td>田中太郎</td>
+                  <td class="text-muted">2026-01-31 15:42</td>
+                </tr>
+                <tr>
+                  <td><span class="expand-icon">&#x25B6;</span></td>
+                  <td>
+                    <strong>api-server</strong>
+                    <div class="repo-url">github.com/team/api-server</div>
+                  </td>
+                  <td class="text-right font-mono">198</td>
+                  <td class="text-right font-mono">3,450,000</td>
+                  <td class="text-right font-mono">6</td>
+                  <td>鈴木花子</td>
+                  <td class="text-muted">2026-01-31 14:20</td>
+                </tr>
+                <tr>
+                  <td><span class="expand-icon">&#x25B6;</span></td>
+                  <td>
+                    <strong>docs</strong>
+                    <div class="repo-url">github.com/team/docs</div>
+                  </td>
+                  <td class="text-right font-mono">112</td>
+                  <td class="text-right font-mono">1,680,000</td>
+                  <td class="text-right font-mono">5</td>
+                  <td>高橋美咲</td>
+                  <td class="text-muted">2026-01-31 09:15</td>
+                </tr>
+                <tr>
+                  <td><span class="expand-icon">&#x25B6;</span></td>
+                  <td>
+                    <strong>mobile-app</strong>
+                    <div class="repo-url">github.com/team/mobile-app</div>
+                  </td>
+                  <td class="text-right font-mono">87</td>
+                  <td class="text-right font-mono">1,320,000</td>
+                  <td class="text-right font-mono">3</td>
+                  <td>佐藤次郎</td>
+                  <td class="text-muted">2026-01-30 18:30</td>
+                </tr>
+                <tr>
+                  <td><span class="expand-icon">&#x25B6;</span></td>
+                  <td>
+                    <strong>infra</strong>
+                    <div class="repo-url">github.com/team/infra</div>
+                  </td>
+                  <td class="text-right font-mono">44</td>
+                  <td class="text-right font-mono">750,000</td>
+                  <td class="text-right font-mono">2</td>
+                  <td>山田一郎</td>
+                  <td class="text-muted">2026-01-29 17:22</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== 展開例: my-app の詳細 ===== -->
+      <div class="repo-detail">
+        <div class="repo-detail-header">
+          <div class="repo-icon">M</div>
+          <div>
+            <h3>my-app の詳細</h3>
+            <div class="sub"><a href="#">github.com/team/my-app</a> | 過去30日 | 245セッション | 4,120,000トークン</div>
+          </div>
+        </div>
+        <div class="repo-detail-body">
+
+          <div class="detail-grid">
+            <!-- 日別セッション推移 -->
+            <div class="mini-chart">
+              <div class="mini-chart-title">日別セッション推移</div>
+              <div class="v-bar-chart">
+                <div class="col"><div class="bar" style="height:30%;background:var(--chart-sonnet);"></div><span class="label">1/1</span></div>
+                <div class="col"><div class="bar" style="height:45%;background:var(--chart-sonnet);"></div><span class="label">1/2</span></div>
+                <div class="col"><div class="bar" style="height:25%;background:var(--chart-sonnet);"></div><span class="label">1/3</span></div>
+                <div class="col"><div class="bar" style="height:5%;background:var(--chart-sonnet);"></div><span class="label">1/4</span></div>
+                <div class="col"><div class="bar" style="height:2%;background:var(--chart-sonnet);"></div><span class="label">1/5</span></div>
+                <div class="col"><div class="bar" style="height:60%;background:var(--chart-sonnet);"></div><span class="label">1/6</span></div>
+                <div class="col"><div class="bar" style="height:75%;background:var(--chart-sonnet);"></div><span class="label">1/7</span></div>
+                <div class="col"><div class="bar" style="height:68%;background:var(--chart-sonnet);"></div><span class="label">1/8</span></div>
+                <div class="col"><div class="bar" style="height:85%;background:var(--chart-sonnet);"></div><span class="label">1/9</span></div>
+                <div class="col"><div class="bar" style="height:50%;background:var(--chart-sonnet);"></div><span class="label">1/10</span></div>
+                <div class="col"><div class="bar" style="height:15%;background:var(--chart-sonnet);"></div><span class="label">1/11</span></div>
+                <div class="col"><div class="bar" style="height:8%;background:var(--chart-sonnet);"></div><span class="label">1/12</span></div>
+                <div class="col"><div class="bar" style="height:55%;background:var(--chart-sonnet);"></div><span class="label">1/13</span></div>
+                <div class="col"><div class="bar" style="height:72%;background:var(--chart-sonnet);"></div><span class="label">1/14</span></div>
+                <div class="col"><div class="bar" style="height:80%;background:var(--chart-sonnet);"></div><span class="label">1/15</span></div>
+                <div class="col"><div class="bar" style="height:65%;background:var(--chart-sonnet);"></div><span class="label">1/16</span></div>
+                <div class="col"><div class="bar" style="height:48%;background:var(--chart-sonnet);"></div><span class="label">1/17</span></div>
+                <div class="col"><div class="bar" style="height:10%;background:var(--chart-sonnet);"></div><span class="label">1/18</span></div>
+                <div class="col"><div class="bar" style="height:4%;background:var(--chart-sonnet);"></div><span class="label">1/19</span></div>
+                <div class="col"><div class="bar" style="height:78%;background:var(--chart-sonnet);"></div><span class="label">1/20</span></div>
+                <div class="col"><div class="bar" style="height:92%;background:var(--chart-sonnet);"></div><span class="label">1/21</span></div>
+                <div class="col"><div class="bar" style="height:70%;background:var(--chart-sonnet);"></div><span class="label">1/22</span></div>
+                <div class="col"><div class="bar" style="height:82%;background:var(--chart-sonnet);"></div><span class="label">1/23</span></div>
+                <div class="col"><div class="bar" style="height:58%;background:var(--chart-sonnet);"></div><span class="label">1/24</span></div>
+                <div class="col"><div class="bar" style="height:14%;background:var(--chart-sonnet);"></div><span class="label">1/25</span></div>
+                <div class="col"><div class="bar" style="height:6%;background:var(--chart-sonnet);"></div><span class="label">1/26</span></div>
+                <div class="col"><div class="bar" style="height:88%;background:var(--chart-sonnet);"></div><span class="label">1/27</span></div>
+                <div class="col"><div class="bar" style="height:95%;background:var(--chart-sonnet);"></div><span class="label">1/28</span></div>
+                <div class="col"><div class="bar" style="height:72%;background:var(--chart-sonnet);"></div><span class="label">1/29</span></div>
+                <div class="col"><div class="bar" style="height:85%;background:var(--chart-sonnet);"></div><span class="label">1/30</span></div>
+                <div class="col"><div class="bar" style="height:100%;background:var(--chart-sonnet);"></div><span class="label">1/31</span></div>
+              </div>
+            </div>
+
+            <!-- メンバー別利用比率 -->
+            <div class="mini-chart">
+              <div class="mini-chart-title">メンバー別利用比率</div>
+              <div class="donut-wrap">
+                <div class="donut-ring" style="background: conic-gradient(var(--chart-input) 0% 32%, var(--chart-opus) 32% 52%, var(--chart-haiku) 52% 68%, var(--success) 68% 80%, var(--warning) 80% 90%, var(--danger) 90% 96%, var(--text-muted) 96% 100%);"></div>
+                <div class="donut-legend">
+                  <div class="donut-legend-item">
+                    <span class="donut-legend-color" style="background:var(--chart-input);"></span>
+                    田中太郎 — 32%
+                  </div>
+                  <div class="donut-legend-item">
+                    <span class="donut-legend-color" style="background:var(--chart-opus);"></span>
+                    鈴木花子 — 20%
+                  </div>
+                  <div class="donut-legend-item">
+                    <span class="donut-legend-color" style="background:var(--chart-haiku);"></span>
+                    佐藤次郎 — 16%
+                  </div>
+                  <div class="donut-legend-item">
+                    <span class="donut-legend-color" style="background:var(--success);"></span>
+                    高橋美咲 — 12%
+                  </div>
+                  <div class="donut-legend-item">
+                    <span class="donut-legend-color" style="background:var(--warning);"></span>
+                    山田一郎 — 10%
+                  </div>
+                  <div class="donut-legend-item">
+                    <span class="donut-legend-color" style="background:var(--danger);"></span>
+                    伊藤健太 — 6%
+                  </div>
+                  <div class="donut-legend-item">
+                    <span class="donut-legend-color" style="background:var(--text-muted);"></span>
+                    その他 — 4%
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ブランチ別集計 -->
+          <div class="detail-section-title">ブランチ別集計</div>
+          <table class="data-table" style="margin-bottom:20px;">
+            <thead>
+              <tr>
+                <th>ブランチ名</th>
+                <th class="text-right">セッション数</th>
+                <th class="text-right">トークン合計</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="branch-name">main</span></td>
+                <td class="text-right font-mono">98</td>
+                <td class="text-right font-mono">1,650,000</td>
+              </tr>
+              <tr>
+                <td><span class="branch-name">feature/auth</span></td>
+                <td class="text-right font-mono">62</td>
+                <td class="text-right font-mono">1,040,000</td>
+              </tr>
+              <tr>
+                <td><span class="branch-name">fix/api-bug</span></td>
+                <td class="text-right font-mono">38</td>
+                <td class="text-right font-mono">580,000</td>
+              </tr>
+              <tr>
+                <td><span class="branch-name">feature/dashboard</span></td>
+                <td class="text-right font-mono">27</td>
+                <td class="text-right font-mono">490,000</td>
+              </tr>
+              <tr>
+                <td><span class="branch-name">refactor/db-layer</span></td>
+                <td class="text-right font-mono">20</td>
+                <td class="text-right font-mono">360,000</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <!-- 最近のセッション 5件 -->
+          <div class="detail-section-title">最近のセッション (5件)</div>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>日時</th>
+                <th>メンバー</th>
+                <th>モデル</th>
+                <th class="text-right">トークン</th>
+                <th>ブランチ</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="text-muted">2026-01-31 15:42</td>
+                <td>田中太郎</td>
+                <td><span class="badge badge-sonnet">Sonnet</span></td>
+                <td class="text-right font-mono">32,400</td>
+                <td><span class="branch-name">feature/auth</span></td>
+              </tr>
+              <tr>
+                <td class="text-muted">2026-01-31 14:10</td>
+                <td>鈴木花子</td>
+                <td><span class="badge badge-opus">Opus</span></td>
+                <td class="text-right font-mono">58,200</td>
+                <td><span class="branch-name">main</span></td>
+              </tr>
+              <tr>
+                <td class="text-muted">2026-01-31 11:30</td>
+                <td>田中太郎</td>
+                <td><span class="badge badge-sonnet">Sonnet</span></td>
+                <td class="text-right font-mono">21,800</td>
+                <td><span class="branch-name">feature/auth</span></td>
+              </tr>
+              <tr>
+                <td class="text-muted">2026-01-31 09:15</td>
+                <td>高橋美咲</td>
+                <td><span class="badge badge-haiku">Haiku</span></td>
+                <td class="text-right font-mono">8,600</td>
+                <td><span class="branch-name">fix/api-bug</span></td>
+              </tr>
+              <tr>
+                <td class="text-muted">2026-01-30 17:50</td>
+                <td>佐藤次郎</td>
+                <td><span class="badge badge-sonnet">Sonnet</span></td>
+                <td class="text-right font-mono">45,100</td>
+                <td><span class="branch-name">feature/dashboard</span></td>
+              </tr>
+            </tbody>
+          </table>
+
+        </div>
+      </div>
+
+    </div><!-- /.page-body -->
+  </main>
+
+</div><!-- /.page-layout -->
+</body>
+</html>

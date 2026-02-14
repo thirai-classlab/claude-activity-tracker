@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>セッション履歴 — Claude Activity Tracker</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    /* セッション履歴ページ固有スタイル */
+    .search-bar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 28px;
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .search-bar input[type="text"] {
+      flex: 1;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      color: var(--text-primary);
+      padding: 8px 14px;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      outline: none;
+      transition: border-color var(--transition-fast);
+    }
+
+    .search-bar input[type="text"]::placeholder {
+      color: var(--text-muted);
+    }
+
+    .search-bar input[type="text"]:focus {
+      border-color: var(--accent);
+    }
+
+    .session-row-link {
+      display: contents;
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .session-row-link:hover td {
+      background: rgba(59, 130, 246, 0.08);
+    }
+
+    .data-table tbody tr.clickable-row {
+      cursor: pointer;
+    }
+
+    .data-table tbody tr.clickable-row:hover {
+      background: rgba(59, 130, 246, 0.08);
+    }
+
+    .token-pair {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+
+    .token-input {
+      color: var(--text-primary);
+      font-size: 13px;
+    }
+
+    .token-output {
+      color: var(--text-muted);
+      font-size: 11px;
+    }
+
+    .session-meta {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .session-meta-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+    }
+
+    .error-count-zero {
+      color: var(--text-muted);
+    }
+
+    .error-count-nonzero {
+      color: var(--danger);
+      font-weight: 600;
+    }
+
+    .table-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 20px;
+      border-top: 1px solid var(--border);
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    .table-footer-info {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="page-layout">
+
+    <!-- サイドナビ -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-logo">
+          <div class="sidebar-logo-icon">&#x1F4CA;</div>
+          <div>
+            <div class="sidebar-logo-text">Activity Tracker</div>
+            <div class="sidebar-logo-sub">Claude Usage Analytics</div>
+          </div>
+        </div>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="dashboard.html">
+          <span class="sidebar-nav-icon">&#x1F3E0;</span> 概要
+        </a>
+        <a href="tokens.html">
+          <span class="sidebar-nav-icon">&#x1F4B0;</span> トークン
+        </a>
+        <a href="members.html">
+          <span class="sidebar-nav-icon">&#x1F465;</span> メンバー
+        </a>
+        <a href="repositories.html">
+          <span class="sidebar-nav-icon">&#x1F4C1;</span> リポジトリ
+        </a>
+        <a href="sessions.html" class="active">
+          <span class="sidebar-nav-icon">&#x1F4DD;</span> 履歴
+        </a>
+        <a href="session-detail.html">
+          <span class="sidebar-nav-icon">&#x1F50D;</span> 詳細
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        v0.1.0 &middot; Mock
+      </div>
+    </aside>
+
+    <!-- メインコンテンツ -->
+    <main class="main-content">
+
+      <div class="page-header">
+        <h1>セッション履歴</h1>
+        <p>全セッションの検索・閲覧。セッションをクリックして詳細を確認できます。</p>
+      </div>
+
+      <!-- フィルターバー -->
+      <div class="filter-bar">
+        <div class="filter-group">
+          <label>期間</label>
+          <input type="date" value="2025-02-06">
+          <span style="color: var(--text-muted);">〜</span>
+          <input type="date" value="2025-02-12">
+        </div>
+        <div class="filter-group">
+          <label>メンバー</label>
+          <select>
+            <option>全メンバー</option>
+            <option>田中太郎</option>
+            <option>鈴木花子</option>
+            <option>山田健一</option>
+            <option>佐藤美咲</option>
+            <option>高橋大輔</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>リポジトリ</label>
+          <select>
+            <option>全リポジトリ</option>
+            <option>my-app</option>
+            <option>api-server</option>
+            <option>frontend-ui</option>
+            <option>data-pipeline</option>
+            <option>infra-config</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>モデル</label>
+          <select>
+            <option>全モデル</option>
+            <option>Opus</option>
+            <option>Sonnet</option>
+            <option>Haiku</option>
+          </select>
+        </div>
+        <button class="btn btn-primary btn-apply">適用</button>
+      </div>
+
+      <!-- 検索バー -->
+      <div class="search-bar">
+        <span style="color: var(--text-muted); font-size: 15px;">&#x1F50E;</span>
+        <input type="text" placeholder="プロンプト内容を検索（例: 認証機能、テスト追加、バグ修正...）">
+        <button class="btn btn-ghost">検索</button>
+      </div>
+
+      <!-- セッション一覧テーブル -->
+      <div class="page-body" style="padding-top: 16px;">
+        <div class="card">
+          <div class="card-body-flush">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>日時 <span class="sort-icon active">&#x25BC;</span></th>
+                  <th>メンバー</th>
+                  <th>モデル</th>
+                  <th class="text-right">トークン (入力/出力)</th>
+                  <th class="text-center">ターン数</th>
+                  <th class="text-center">サブエージェント</th>
+                  <th class="text-center">エラー</th>
+                  <th>リポジトリ</th>
+                </tr>
+              </thead>
+              <tbody>
+                <!-- Row 1 -->
+                <tr class="clickable-row" onclick="location.href='session-detail.html'">
+                  <td>
+                    <div>2/12 14:23</div>
+                    <div style="font-size: 11px; color: var(--text-muted);">38分</div>
+                  </td>
+                  <td>田中太郎</td>
+                  <td><span class="badge badge-opus">Opus</span></td>
+                  <td class="text-right">
+                    <div class="token-pair">
+                      <span class="token-input">45.2K</span>
+                      <span class="token-output">/ 12.1K</span>
+                    </div>
+                  </td>
+                  <td class="text-center">8</td>
+                  <td class="text-center">2</td>
+                  <td class="text-center"><span class="error-count-zero">0</span></td>
+                  <td><span class="font-mono" style="font-size: 12px;">my-app</span></td>
+                </tr>
+                <!-- Row 2 -->
+                <tr class="clickable-row" onclick="location.href='session-detail.html'">
+                  <td>
+                    <div>2/12 13:45</div>
+                    <div style="font-size: 11px; color: var(--text-muted);">22分</div>
+                  </td>
+                  <td>鈴木花子</td>
+                  <td><span class="badge badge-sonnet">Sonnet</span></td>
+                  <td class="text-right">
+                    <div class="token-pair">
+                      <span class="token-input">32.1K</span>
+                      <span class="token-output">/ 8.4K</span>
+                    </div>
+                  </td>
+                  <td class="text-center">12</td>
+                  <td class="text-center">0</td>
+                  <td class="text-center"><span class="badge badge-danger">1</span></td>
+                  <td><span class="font-mono" style="font-size: 12px;">api-server</span></td>
+                </tr>
+                <!-- Row 3 -->
+                <tr class="clickable-row" onclick="location.href='session-detail.html'">
+                  <td>
+                    <div>2/12 11:30</div>
+                    <div style="font-size: 11px; color: var(--text-muted);">15分</div>
+                  </td>
+                  <td>山田健一</td>
+                  <td><span class="badge badge-opus">Opus</span></td>
+                  <td class="text-right">
+                    <div class="token-pair">
+                      <span class="token-input">28.7K</span>
+                      <span class="token-output">/ 9.3K</span>
+                    </div>
+                  </td>
+                  <td class="text-center">5</td>
+                  <td class="text-center">1</td>
+                  <td class="text-center"><span class="error-count-zero">0</span></td>
+                  <td><span class="font-mono" style="font-size: 12px;">frontend-ui</span></td>
+                </tr>
+                <!-- Row 4 -->
+                <tr class="clickable-row" onclick="location.href='session-detail.html'">
+                  <td>
+                    <div>2/12 10:05</div>
+                    <div style="font-size: 11px; color: var(--text-muted);">52分</div>
+                  </td>
+                  <td>佐藤美咲</td>
+                  <td><span class="badge badge-sonnet">Sonnet</span></td>
+                  <td class="text-right">
+                    <div class="token-pair">
+                      <span class="token-input">61.4K</span>
+                      <span class="token-output">/ 18.2K</span>
+                    </div>
+                  </td>
+                  <td class="text-center">15</td>
+                  <td class="text-center">3</td>
+                  <td class="text-center"><span class="badge badge-danger">2</span></td>
+                  <td><span class="font-mono" style="font-size: 12px;">data-pipeline</span></td>
+                </tr>
+                <!-- Row 5 -->
+                <tr class="clickable-row" onclick="location.href='session-detail.html'">
+                  <td>
+                    <div>2/12 09:18</div>
+                    <div style="font-size: 11px; color: var(--text-muted);">8分</div>
+                  </td>
+                  <td>高橋大輔</td>
+                  <td><span class="badge badge-haiku">Haiku</span></td>
+                  <td class="text-right">
+                    <div class="token-pair">
+                      <span class="token-input">8.9K</span>
+                      <span class="token-output">/ 3.1K</span>
+                    </div>
+                  </td>
+                  <td class="text-center">3</td>
+                  <td class="text-center">0</td>
+                  <td class="text-center"><span class="error-count-zero">0</span></td>
+                  <td><span class="font-mono" style="font-size: 12px;">infra-config</span></td>
+                </tr>
+                <!-- Row 6 -->
+                <tr class="clickable-row" onclick="location.href='session-detail.html'">
+                  <td>
+                    <div>2/11 17:42</div>
+                    <div style="font-size: 11px; color: var(--text-muted);">31分</div>
+                  </td>
+                  <td>田中太郎</td>
+                  <td><span class="badge badge-sonnet">Sonnet</span></td>
+                  <td class="text-right">
+                    <div class="token-pair">
+                      <span class="token-input">38.5K</span>
+                      <span class="token-output">/ 11.7K</span>
+                    </div>
+                  </td>
+                  <td class="text-center">10</td>
+                  <td class="text-center">1</td>
+                  <td class="text-center"><span class="error-count-zero">0</span></td>
+                  <td><span class="font-mono" style="font-size: 12px;">api-server</span></td>
+                </tr>
+                <!-- Row 7 -->
+                <tr class="clickable-row" onclick="location.href='session-detail.html'">
+                  <td>
+                    <div>2/11 16:15</div>
+                    <div style="font-size: 11px; color: var(--text-muted);">45分</div>
+                  </td>
+                  <td>鈴木花子</td>
+                  <td><span class="badge badge-opus">Opus</span></td>
+                  <td class="text-right">
+                    <div class="token-pair">
+                      <span class="token-input">52.3K</span>
+                      <span class="token-output">/ 15.8K</span>
+                    </div>
+                  </td>
+                  <td class="text-center">14</td>
+                  <td class="text-center">4</td>
+                  <td class="text-center"><span class="badge badge-danger">1</span></td>
+                  <td><span class="font-mono" style="font-size: 12px;">my-app</span></td>
+                </tr>
+                <!-- Row 8 -->
+                <tr class="clickable-row" onclick="location.href='session-detail.html'">
+                  <td>
+                    <div>2/11 14:50</div>
+                    <div style="font-size: 11px; color: var(--text-muted);">12分</div>
+                  </td>
+                  <td>山田健一</td>
+                  <td><span class="badge badge-haiku">Haiku</span></td>
+                  <td class="text-right">
+                    <div class="token-pair">
+                      <span class="token-input">11.2K</span>
+                      <span class="token-output">/ 4.5K</span>
+                    </div>
+                  </td>
+                  <td class="text-center">6</td>
+                  <td class="text-center">0</td>
+                  <td class="text-center"><span class="error-count-zero">0</span></td>
+                  <td><span class="font-mono" style="font-size: 12px;">frontend-ui</span></td>
+                </tr>
+                <!-- Row 9 -->
+                <tr class="clickable-row" onclick="location.href='session-detail.html'">
+                  <td>
+                    <div>2/11 13:20</div>
+                    <div style="font-size: 11px; color: var(--text-muted);">27分</div>
+                  </td>
+                  <td>佐藤美咲</td>
+                  <td><span class="badge badge-opus">Opus</span></td>
+                  <td class="text-right">
+                    <div class="token-pair">
+                      <span class="token-input">41.0K</span>
+                      <span class="token-output">/ 13.6K</span>
+                    </div>
+                  </td>
+                  <td class="text-center">9</td>
+                  <td class="text-center">2</td>
+                  <td class="text-center"><span class="error-count-zero">0</span></td>
+                  <td><span class="font-mono" style="font-size: 12px;">data-pipeline</span></td>
+                </tr>
+                <!-- Row 10 -->
+                <tr class="clickable-row" onclick="location.href='session-detail.html'">
+                  <td>
+                    <div>2/11 11:08</div>
+                    <div style="font-size: 11px; color: var(--text-muted);">19分</div>
+                  </td>
+                  <td>高橋大輔</td>
+                  <td><span class="badge badge-sonnet">Sonnet</span></td>
+                  <td class="text-right">
+                    <div class="token-pair">
+                      <span class="token-input">24.6K</span>
+                      <span class="token-output">/ 7.8K</span>
+                    </div>
+                  </td>
+                  <td class="text-center">7</td>
+                  <td class="text-center">1</td>
+                  <td class="text-center"><span class="error-count-zero">0</span></td>
+                  <td><span class="font-mono" style="font-size: 12px;">infra-config</span></td>
+                </tr>
+                <!-- Row 11 -->
+                <tr class="clickable-row" onclick="location.href='session-detail.html'">
+                  <td>
+                    <div>2/11 09:35</div>
+                    <div style="font-size: 11px; color: var(--text-muted);">33分</div>
+                  </td>
+                  <td>田中太郎</td>
+                  <td><span class="badge badge-opus">Opus</span></td>
+                  <td class="text-right">
+                    <div class="token-pair">
+                      <span class="token-input">47.8K</span>
+                      <span class="token-output">/ 14.2K</span>
+                    </div>
+                  </td>
+                  <td class="text-center">11</td>
+                  <td class="text-center">3</td>
+                  <td class="text-center"><span class="badge badge-danger">1</span></td>
+                  <td><span class="font-mono" style="font-size: 12px;">my-app</span></td>
+                </tr>
+                <!-- Row 12 -->
+                <tr class="clickable-row" onclick="location.href='session-detail.html'">
+                  <td>
+                    <div>2/10 16:55</div>
+                    <div style="font-size: 11px; color: var(--text-muted);">41分</div>
+                  </td>
+                  <td>鈴木花子</td>
+                  <td><span class="badge badge-sonnet">Sonnet</span></td>
+                  <td class="text-right">
+                    <div class="token-pair">
+                      <span class="token-input">55.9K</span>
+                      <span class="token-output">/ 16.3K</span>
+                    </div>
+                  </td>
+                  <td class="text-center">13</td>
+                  <td class="text-center">2</td>
+                  <td class="text-center"><span class="error-count-zero">0</span></td>
+                  <td><span class="font-mono" style="font-size: 12px;">api-server</span></td>
+                </tr>
+                <!-- Row 13 -->
+                <tr class="clickable-row" onclick="location.href='session-detail.html'">
+                  <td>
+                    <div>2/10 15:10</div>
+                    <div style="font-size: 11px; color: var(--text-muted);">6分</div>
+                  </td>
+                  <td>山田健一</td>
+                  <td><span class="badge badge-haiku">Haiku</span></td>
+                  <td class="text-right">
+                    <div class="token-pair">
+                      <span class="token-input">5.4K</span>
+                      <span class="token-output">/ 2.1K</span>
+                    </div>
+                  </td>
+                  <td class="text-center">2</td>
+                  <td class="text-center">0</td>
+                  <td class="text-center"><span class="error-count-zero">0</span></td>
+                  <td><span class="font-mono" style="font-size: 12px;">frontend-ui</span></td>
+                </tr>
+                <!-- Row 14 -->
+                <tr class="clickable-row" onclick="location.href='session-detail.html'">
+                  <td>
+                    <div>2/10 13:28</div>
+                    <div style="font-size: 11px; color: var(--text-muted);">55分</div>
+                  </td>
+                  <td>佐藤美咲</td>
+                  <td><span class="badge badge-opus">Opus</span></td>
+                  <td class="text-right">
+                    <div class="token-pair">
+                      <span class="token-input">72.1K</span>
+                      <span class="token-output">/ 21.5K</span>
+                    </div>
+                  </td>
+                  <td class="text-center">18</td>
+                  <td class="text-center">5</td>
+                  <td class="text-center"><span class="badge badge-danger">3</span></td>
+                  <td><span class="font-mono" style="font-size: 12px;">data-pipeline</span></td>
+                </tr>
+                <!-- Row 15 -->
+                <tr class="clickable-row" onclick="location.href='session-detail.html'">
+                  <td>
+                    <div>2/10 10:42</div>
+                    <div style="font-size: 11px; color: var(--text-muted);">14分</div>
+                  </td>
+                  <td>高橋大輔</td>
+                  <td><span class="badge badge-sonnet">Sonnet</span></td>
+                  <td class="text-right">
+                    <div class="token-pair">
+                      <span class="token-input">18.3K</span>
+                      <span class="token-output">/ 6.0K</span>
+                    </div>
+                  </td>
+                  <td class="text-center">4</td>
+                  <td class="text-center">0</td>
+                  <td class="text-center"><span class="error-count-zero">0</span></td>
+                  <td><span class="font-mono" style="font-size: 12px;">infra-config</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <!-- テーブルフッター -->
+          <div class="table-footer">
+            <div class="table-footer-info">
+              表示件数: <strong>15</strong> / 全 <strong>178</strong>件
+            </div>
+            <div class="pagination">
+              <a class="disabled">&laquo;</a>
+              <a class="disabled">&lsaquo;</a>
+              <a class="active">1</a>
+              <a href="#">2</a>
+              <a href="#">3</a>
+              <span style="color: var(--text-muted);">...</span>
+              <a href="#">12</a>
+              <a href="#">&rsaquo;</a>
+              <a href="#">&raquo;</a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</body>
+</html>

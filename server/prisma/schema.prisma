@@ -1,0 +1,186 @@
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Member {
+  id            Int       @id @default(autoincrement())
+  gitEmail      String    @unique @map("git_email")
+  claudeAccount String?   @map("claude_account")
+  displayName   String?   @map("display_name")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  sessions      Session[]
+
+  @@map("members")
+}
+
+model Session {
+  id                       Int       @id @default(autoincrement())
+  memberId                 Int?      @map("member_id")
+  sessionUuid              String    @unique @map("session_uuid")
+  model                    String?
+  source                   String?
+  permissionMode           String?   @map("permission_mode")
+  cwd                      String?   @db.Text
+  gitRepo                  String?   @map("git_repo")
+  gitBranch                String?   @map("git_branch")
+  ipAddress                String?   @map("ip_address")
+  startedAt                DateTime? @map("started_at")
+  endedAt                  DateTime? @map("ended_at")
+  endReason                String?   @map("end_reason")
+  totalInputTokens         Int       @default(0) @map("total_input_tokens")
+  totalOutputTokens        Int       @default(0) @map("total_output_tokens")
+  totalCacheCreationTokens Int       @default(0) @map("total_cache_creation_tokens")
+  totalCacheReadTokens     Int       @default(0) @map("total_cache_read_tokens")
+  estimatedCost            Float?    @map("estimated_cost") @db.Double
+  turnCount                Int       @default(0) @map("turn_count")
+  toolUseCount             Int       @default(0) @map("tool_use_count")
+  subagentCount            Int       @default(0) @map("subagent_count")
+  compactCount             Int       @default(0) @map("compact_count")
+  errorCount               Int       @default(0) @map("error_count")
+  summary                  String?   @db.Text
+  createdAt                DateTime  @default(now()) @map("created_at")
+  updatedAt                DateTime  @updatedAt @map("updated_at")
+
+  member        Member?        @relation(fields: [memberId], references: [id])
+  turns         Turn[]
+  subagents     Subagent[]
+  toolUses      ToolUse[]
+  fileChanges   FileChange[]
+  sessionEvents SessionEvent[]
+
+  @@index([memberId])
+  @@index([startedAt])
+  @@index([model])
+  @@index([gitRepo])
+  @@map("sessions")
+}
+
+model Turn {
+  id                  Int       @id @default(autoincrement())
+  sessionId           Int       @map("session_id")
+  turnNumber          Int       @map("turn_number")
+  promptText          String?   @map("prompt_text") @db.Text
+  promptSubmittedAt   DateTime? @map("prompt_submitted_at")
+  responseCompletedAt DateTime? @map("response_completed_at")
+  durationMs          Int?      @map("duration_ms")
+  inputTokens         Int       @default(0) @map("input_tokens")
+  outputTokens        Int       @default(0) @map("output_tokens")
+  cacheCreationTokens Int       @default(0) @map("cache_creation_tokens")
+  cacheReadTokens     Int       @default(0) @map("cache_read_tokens")
+  model               String?
+  stopReason          String?   @map("stop_reason")
+  createdAt           DateTime  @default(now()) @map("created_at")
+
+  session     Session      @relation(fields: [sessionId], references: [id])
+  toolUses    ToolUse[]
+  subagents   Subagent[]
+  fileChanges FileChange[]
+
+  @@index([sessionId])
+  @@index([promptSubmittedAt])
+  @@map("turns")
+}
+
+model Subagent {
+  id                  Int       @id @default(autoincrement())
+  sessionId           Int       @map("session_id")
+  turnId              Int?      @map("turn_id")
+  parentToolUseId     Int?      @map("parent_tool_use_id")
+  agentUuid           String    @unique @map("agent_uuid")
+  agentType           String    @map("agent_type")
+  agentModel          String?   @map("agent_model")
+  promptText          String?   @map("prompt_text") @db.Text
+  description         String?   @db.Text
+  startedAt           DateTime? @map("started_at")
+  stoppedAt           DateTime? @map("stopped_at")
+  durationSeconds     Int?      @map("duration_seconds")
+  inputTokens         Int       @default(0) @map("input_tokens")
+  outputTokens        Int       @default(0) @map("output_tokens")
+  cacheCreationTokens Int       @default(0) @map("cache_creation_tokens")
+  cacheReadTokens     Int       @default(0) @map("cache_read_tokens")
+  estimatedCost       Float?    @map("estimated_cost") @db.Double
+  toolUseCount        Int       @default(0) @map("tool_use_count")
+  createdAt           DateTime  @default(now()) @map("created_at")
+
+  session       Session   @relation(fields: [sessionId], references: [id])
+  turn          Turn?     @relation(fields: [turnId], references: [id])
+  parentToolUse ToolUse?  @relation("SubagentParent", fields: [parentToolUseId], references: [id])
+  toolUses      ToolUse[] @relation("SubagentToolUses")
+
+  @@index([sessionId])
+  @@index([turnId])
+  @@index([agentType])
+  @@index([startedAt])
+  @@map("subagents")
+}
+
+model ToolUse {
+  id              Int       @id @default(autoincrement())
+  sessionId       Int       @map("session_id")
+  turnId          Int?      @map("turn_id")
+  subagentId      Int?      @map("subagent_id")
+  toolUseUuid     String?   @map("tool_use_uuid")
+  toolName        String    @map("tool_name")
+  toolCategory    String?   @map("tool_category")
+  toolInputSummary String?  @map("tool_input_summary") @db.Text
+  status          String    @default("success")
+  errorMessage    String?   @map("error_message") @db.Text
+  isMcp           Boolean   @default(false) @map("is_mcp")
+  mcpServer       String?   @map("mcp_server")
+  executedAt      DateTime? @map("executed_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  session        Session      @relation(fields: [sessionId], references: [id])
+  turn           Turn?        @relation(fields: [turnId], references: [id])
+  subagent       Subagent?    @relation("SubagentToolUses", fields: [subagentId], references: [id])
+  childSubagents Subagent[]   @relation("SubagentParent")
+  fileChanges    FileChange[]
+
+  @@index([sessionId])
+  @@index([turnId])
+  @@index([subagentId])
+  @@index([toolName])
+  @@index([toolCategory])
+  @@index([status])
+  @@map("tool_uses")
+}
+
+model FileChange {
+  id        Int       @id @default(autoincrement())
+  sessionId Int       @map("session_id")
+  turnId    Int?      @map("turn_id")
+  toolUseId Int?      @map("tool_use_id")
+  filePath  String    @map("file_path") @db.VarChar(512)
+  operation String
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  session Session  @relation(fields: [sessionId], references: [id])
+  turn    Turn?    @relation(fields: [turnId], references: [id])
+  toolUse ToolUse? @relation(fields: [toolUseId], references: [id])
+
+  @@index([sessionId])
+  @@index([filePath])
+  @@map("file_changes")
+}
+
+model SessionEvent {
+  id           Int       @id @default(autoincrement())
+  sessionId    Int       @map("session_id")
+  eventType    String    @map("event_type")
+  eventSubtype String?   @map("event_subtype")
+  eventData    String?   @map("event_data") @db.Text
+  occurredAt   DateTime? @map("occurred_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  session Session @relation(fields: [sessionId], references: [id])
+
+  @@index([sessionId])
+  @@index([eventType])
+  @@map("session_events")
+}
