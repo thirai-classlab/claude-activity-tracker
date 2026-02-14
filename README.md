@@ -563,3 +563,4 @@ echo '{"session_id":"test","prompt":"test","model":"test"}' | node ~/.claude/hoo
 | [docs/database-design.md](docs/database-design.md) | データベース設計 |
 | [docs/hook-data-reference.md](docs/hook-data-reference.md) | フックデータリファレンス |
 | [docs/dashboard-design.md](docs/dashboard-design.md) | ダッシュボード設計 |
+| [docs/ai-productivity-kpi-report.md](docs/ai-productivity-kpi-report.md) | AI駆動開発 生産性KPI企画書 |

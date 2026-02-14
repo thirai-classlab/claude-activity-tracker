@@ -80,5 +80,61 @@ npx prisma studio               # DB GUI
 | [docs/dashboard-design.md](docs/dashboard-design.md) | ダッシュボード画面設計 | ダッシュボード UI を修正するとき |
 | [docs/known-issues.md](docs/known-issues.md) | MariaDB/Windows/フックの注意点・トラブルシューティング | バグ修正・環境問題の調査時 |
 | [docs/hook-test-guide.md](docs/hook-test-guide.md) | フックのテスト手順 | フックの動作確認時 |
+| [docs/ai-productivity-kpi-report.md](docs/ai-productivity-kpi-report.md) | AI駆動開発 生産性KPI企画書 | KPI設計・ダッシュボード拡張時 |
 | [server/.env.example](server/.env.example) | 環境変数一覧・Docker使用手順 | 設定変更・デプロイ時 |
 | [server/Dockerfile](server/Dockerfile) | Docker イメージ定義 | コンテナ構成を変更するとき |
+
+## ドキュメント作成ルール
+
+- **資料を作成・追加した場合は、必ず README.md の「関連ドキュメント」セクションと CLAUDE.md の「詳細ドキュメント」テーブルを更新すること**
+- docs/ 配下のドキュメントは以下のテンプレートに従って作成する
+
+### ドキュメントテンプレート
+
+```markdown
+# タイトル
+
+> **パンくず**: [README.md](../README.md) > [docs/](.) > **本ファイル名**
+
+## 目次
+
+- [セクション1](#セクション1)
+- [セクション2](#セクション2)
+- ...
+
+---
+
+## セクション1
+
+本文...
+
+### チャート例（Mermaid を積極的に使用）
+
+﻿```mermaid
+graph LR
+    A[入力] --> B[処理] --> C[出力]
+﻿```
+
+### テーブル例
+
+| 項目 | 説明 |
+|------|------|
+| ... | ... |
+
+---
+
+## 参考文献（外部情報を参照した場合は必須）
+
+- [タイトル](URL) - 補足説明
+```
+
+### テンプレート使用ルール
+
+| ルール | 内容 |
+|--------|------|
+| パンくず | 先頭に必ずパンくずナビゲーションを記載 |
+| 目次 | セクションが3つ以上ある場合は目次を記載 |
+| Mermaid | 構造・フロー・関係性の説明には Mermaid 図を使用（`graph LR` 推奨） |
+| テーブル | 一覧・比較には Markdown テーブルを使用 |
+| 参考文献 | 外部情報を参照した場合はリンク付きで記載 |
+| README 更新 | 資料追加時に README.md と CLAUDE.md の両方のドキュメント一覧を更新 |
