@@ -1,5 +1,7 @@
 # AI Driven Analytics - ダッシュボード設計書
 
+> **パンくず**: [README.md](../README.md) > docs > **dashboard-design.md**
+
 > チームマネージャー / リーダーが Claude Code の利用状況を把握・管理するための
 > ダッシュボードおよび履歴データ閲覧ページの設計
 

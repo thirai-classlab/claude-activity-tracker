@@ -1,5 +1,20 @@
 # 既知の問題・注意点
 
+> **パンくず**: [README.md](../README.md) > docs > **known-issues.md**
+
+## 目次
+
+- [MariaDB 固有の注意](#mariadb-固有の注意)
+- [API キー認証](#api-キー認証)
+- [Windows (PowerShell) 固有の注意](#windows-powershell-固有の注意)
+- [フック共通の注意](#フック共通の注意)
+- [メンバー識別](#メンバー識別)
+- [コスト計算](#コスト計算)
+- [settings.json のフック設定](#settingsjson-のフック設定)
+- [トラブルシューティング](#トラブルシューティング)
+
+---
+
 ## MariaDB 固有の注意
 
 - **`SUM()` / `COUNT()` で BigInt エラー**: Prisma の `$queryRawUnsafe` で集計関数を使うと BigInt が返る場合がある。

@@ -1,5 +1,7 @@
 # Claude Code Hooks 取得可能データリファレンス
 
+> **パンくず**: [README.md](../README.md) > docs > **hook-data-reference.md**
+
 > チーム管理者向け：Claude Code の全フックイベントで取得可能なデータの完全ガイド
 
 ---
