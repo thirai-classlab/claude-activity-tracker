@@ -52,13 +52,13 @@ if (BASIC_AUTH_PASSWORD) {
   });
 }
 
-// Dashboard routes
+// Dashboard routes (protected by API key auth)
 import { dashboardRoutes } from './routes/dashboardRoutes';
-app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/dashboard', apiKeyAuth, dashboardRoutes);
 
 // Dashboard (root serves the EJS dashboard)
 app.get('/', (_req, res) => {
-  res.render('dashboard');
+  res.render('dashboard', { apiKey: process.env.API_KEY || '' });
 });
 
 // Error handler

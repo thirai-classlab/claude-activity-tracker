@@ -224,7 +224,11 @@
   function fetchApi(endpoint, extra) {
     var q = buildQuery(extra);
     var url = '/api/dashboard' + endpoint + (q ? '?' + q : '');
-    return fetch(url).then(function (res) {
+    var opts = {};
+    if (window.__API_KEY__) {
+      opts.headers = { 'X-API-Key': window.__API_KEY__ };
+    }
+    return fetch(url, opts).then(function (res) {
       if (!res.ok) throw new Error('API error: ' + res.status);
       return res.json();
     });
