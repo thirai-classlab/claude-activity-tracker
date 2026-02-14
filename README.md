@@ -338,15 +338,45 @@ pm2 startup && pm2 save
 |--------|------|-----------|------|
 | `DATABASE_URL` | 必須 | `mysql://tracker:trackerpass@db:3306/claude_tracker` | MariaDB 接続文字列 |
 | `PORT` | - | `3001` | API サーバーポート |
-| `API_KEY` | 本番: 必須 | なし（未設定時は認証スキップ） | Hook API 認証キー。`openssl rand -hex 32` で生成。クライアント側 `config.json` の `api_key` と一致させること |
+| `API_KEY` | 本番: 必須 | なし（未設定時は認証スキップ） | Hook API + Dashboard API の認証キー。`openssl rand -hex 32` で生成。クライアント側 `config.json` の `api_key` と一致させること |
+| `BASIC_AUTH_PASSWORD` | - | なし（未設定時は認証なし） | ダッシュボード UI の Basic 認証パスワード。`/api/*` と `/health` はスキップ |
 | `NODE_ENV` | - | `development` | 実行環境 |
 | `COST_OPUS_INPUT` | - | `15` | Opus 入力単価（$/1Mトークン） |
 | `COST_OPUS_OUTPUT` | - | `75` | Opus 出力単価 |
 | `COST_SONNET_INPUT` | - | `3` | Sonnet 入力単価 |
 | `COST_SONNET_OUTPUT` | - | `15` | Sonnet 出力単価 |
 | `COST_HAIKU_INPUT` | - | `0.80` | Haiku 入力単価 |
-| `BASIC_AUTH_PASSWORD` | - | なし（未設定時は認証なし） | ダッシュボード UI の Basic 認証パスワード。`/api/*` と `/health` はスキップ |
 | `COST_HAIKU_OUTPUT` | - | `4` | Haiku 出力単価 |
+
+---
+
+## セキュリティ
+
+本システムは以下の認証機構を提供しています。
+
+| レイヤー | 対象 | 認証方式 | 設定 |
+|---------|------|---------|------|
+| Hook API | `/api/hook/*` | API キー (`X-API-Key` ヘッダー) | `API_KEY` |
+| Dashboard API | `/api/dashboard/*` | API キー (`X-API-Key` ヘッダー) | `API_KEY` |
+| ダッシュボード UI | `/` (HTML) | Basic 認証 | `BASIC_AUTH_PASSWORD` |
+| ヘルスチェック | `/health` | 認証なし | - |
+
+### 認証フロー
+
+```
+ブラウザ → Basic 認証 → ダッシュボード HTML
+  ↓
+フロントエンド JS → X-API-Key ヘッダー → Dashboard API
+  ↓
+フックスクリプト → X-API-Key ヘッダー → Hook API
+```
+
+- `API_KEY` を設定すると、Hook API と Dashboard API の両方が保護されます
+- `BASIC_AUTH_PASSWORD` を設定すると、ダッシュボード画面へのアクセスが保護されます
+- フロントエンド JS にはサーバーサイドから API キーが自動的に渡されます
+
+> **本番環境では `API_KEY` と `BASIC_AUTH_PASSWORD` の両方を設定してください。**
+> HTTPS の設定やファイアウォールなど、ネットワークレベルのセキュリティは運用環境に応じて各自で設定してください。
 
 ---
 

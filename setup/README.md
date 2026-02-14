@@ -222,6 +222,11 @@ cp ~/.claude/settings.json ~/.claude/settings.json.bak
 `aidd-log-prompt.js` でプロンプトの先頭500文字のみ記録しています。
 記録を無効にしたい場合は `config.json` に `"disable_prompt": true` を追加してください。
 
+### Q: セキュリティはどうなっていますか？
+
+本システムは API キー認証（Hook API / Dashboard API）と Basic 認証（ダッシュボード UI）を提供しています。
+HTTPS の設定、ファイアウォール、IP 制限など、ネットワークレベルのセキュリティは運用環境に応じて各自で設定してください。
+
 ---
 
 ## サポート
