@@ -78,7 +78,102 @@ KPI サマリー・日別トークン推移・ツール使用状況・時間帯�
 
 ---
 
-## セットアップ
+## クイックスタート（ユースケース別）
+
+### ケース 1: 個人で自分の利用状況を分析したい
+
+> 自分のトークン消費量やコスト、ツール使用傾向を把握したい場合
+
+```
+自分の PC 1台で完結（サーバーもローカル）
+```
+
+```bash
+# 1. リポジトリを取得
+git clone <repository-url> && cd claude-activity-tracker
+
+# 2. 初期設定（.env + config.json を自動生成）
+bash init.sh
+#   API URL → http://localhost:3001（デフォルトのまま Enter）
+#   BASIC_AUTH_PASSWORD → 空欄でOK（ローカルなので不要）
+
+# 3. サーバー起動
+cd server && docker compose up -d --build && cd ..
+
+# 4. フックをインストール
+cd setup && bash install-mac.sh && cd ..
+
+# 5. Claude Code を再起動 → 次のセッションからデータ記録開始
+# 6. ブラウザで http://localhost:3001 を開く
+```
+
+所要時間: 約5分
+
+---
+
+### ケース 2: チームの AI 駆動開発を可視化したい
+
+> マネージャー/リーダーがチーム全体のコスト・生産性・活用状況を把握したい場合
+
+```
+管理者: 共有サーバーにデプロイ
+各メンバー: 自分の PC にフックをインストール
+```
+
+**管理者の作業:**
+
+```bash
+# 1. サーバーにリポジトリを取得
+git clone <repository-url> && cd claude-activity-tracker
+
+# 2. 初期設定
+bash init.sh
+#   API URL → https://your-server.example.com（メンバーからアクセスできる URL）
+#   BASIC_AUTH_PASSWORD → ダッシュボード閲覧用パスワードを設定
+
+# 3. サーバー起動
+cd server && docker compose up -d --build
+```
+
+**各メンバーの作業:**
+
+```bash
+# 管理者から setup/ フォルダを受け取り、インストーラを実行
+cd setup && bash install-mac.sh   # macOS
+# または
+cd setup && powershell -ExecutionPolicy Bypass -File install-win.ps1   # Windows
+
+# Claude Code を再起動
+```
+
+> `setup/hooks/config.json` に API URL と API Key が含まれているため、メンバーは何も入力する必要はありません。
+
+---
+
+### ケース 3: 既にサーバーが稼働中 — 新メンバーを追加したい
+
+> サーバーは構築済み。新しいメンバーにフックをインストールしてもらうだけ
+
+```bash
+# 管理者から setup/ フォルダを受け取る（Git clone / 共有フォルダ / ZIP）
+cd setup && bash install-mac.sh   # macOS
+
+# Claude Code を再起動 → 完了
+```
+
+所要時間: 約1分
+
+---
+
+### ケース 4: プロンプトの活用状況をリアルタイムで共有したい
+
+> チームメンバーがどんなプロンプトを送っているかをリアルタイムで確認し、ナレッジ共有に活用したい場合
+
+ケース 2 のセットアップ完了後、ダッシュボードの **プロンプトフィード** タブを開くと、メンバーのプロンプトがカード形式でリアルタイム表示されます（15秒間隔で自動更新）。メンバー・リポジトリ・モデルでフィルタリングも可能です。
+
+---
+
+## セットアップ（詳細）
 
 3ステップでセットアップが完了します。
 
