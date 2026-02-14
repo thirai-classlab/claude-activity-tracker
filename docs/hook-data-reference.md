@@ -502,27 +502,27 @@ Claude Code が通知を送信する際に発火。
   "hooks": {
     "SessionStart": [{
       "matcher": "",
-      "hooks": [{ "type": "command", "command": "node \"/path/to/hooks/log-session-start.js\"", "timeout": 10 }]
+      "hooks": [{ "type": "command", "command": "node \"/path/to/hooks/aidd-log-session-start.js\"", "timeout": 10 }]
     }],
     "UserPromptSubmit": [{
       "matcher": "",
-      "hooks": [{ "type": "command", "command": "node \"/path/to/hooks/log-prompt.js\"", "timeout": 10 }]
+      "hooks": [{ "type": "command", "command": "node \"/path/to/hooks/aidd-log-prompt.js\"", "timeout": 10 }]
     }],
     "SubagentStart": [{
       "matcher": "",
-      "hooks": [{ "type": "command", "command": "node \"/path/to/hooks/log-subagent.js\"", "timeout": 10 }]
+      "hooks": [{ "type": "command", "command": "node \"/path/to/hooks/aidd-log-subagent.js\"", "timeout": 10 }]
     }],
     "SubagentStop": [{
       "matcher": "",
-      "hooks": [{ "type": "command", "command": "node \"/path/to/hooks/log-subagent-stop.js\"", "timeout": 15 }]
+      "hooks": [{ "type": "command", "command": "node \"/path/to/hooks/aidd-log-subagent-stop.js\"", "timeout": 15 }]
     }],
     "Stop": [{
       "matcher": "",
-      "hooks": [{ "type": "command", "command": "node \"/path/to/hooks/log-stop.js\"", "timeout": 30 }]
+      "hooks": [{ "type": "command", "command": "node \"/path/to/hooks/aidd-log-stop.js\"", "timeout": 30 }]
     }],
     "SessionEnd": [{
       "matcher": "",
-      "hooks": [{ "type": "command", "command": "node \"/path/to/hooks/log-session-end.js\"", "timeout": 10 }]
+      "hooks": [{ "type": "command", "command": "node \"/path/to/hooks/aidd-log-session-end.js\"", "timeout": 10 }]
     }]
   }
 }
@@ -536,24 +536,24 @@ Claude Code が通知を送信する際に発火。
 ┌─────────────────────────────────────────────────────┐
 │                    Claude Code                       │
 │                                                      │
-│  SessionStart ──→ [log-session-start.js]             │
+│  SessionStart ──→ [aidd-log-session-start.js]         │
 │       │               ↓ model, source, session_id    │
 │       ↓                                              │
-│  UserPromptSubmit ──→ [log-prompt.js]                │
+│  UserPromptSubmit ──→ [aidd-log-prompt.js]            │
 │       │               ↓ prompt, start_time           │
 │       ↓                                              │
 │  PreToolUse ──→ (将来) tool_name, tool_input         │
 │  PostToolUse                                         │
 │  PostToolUseFailure                                  │
 │       │                                              │
-│  SubagentStart ──→ [log-subagent.js] (将来)          │
+│  SubagentStart ──→ [aidd-log-subagent.js] (将来)      │
 │  SubagentStop ──→   ↓ agent_type, agent_transcript   │
 │       │                                              │
-│  Stop ──→ [log-stop.js]                              │
+│  Stop ──→ [aidd-log-stop.js]                          │
 │       │     ↓ transcript解析 → tokens, tools, turns  │
 │       │     ↓ GAS POST                               │
 │       ↓                                              │
-│  SessionEnd ──→ [log-session-end.js] (将来)          │
+│  SessionEnd ──→ [aidd-log-session-end.js] (将来)      │
 │                 ↓ reason, total_session_time          │
 └──────────────────────┬──────────────────────────────┘
                        │

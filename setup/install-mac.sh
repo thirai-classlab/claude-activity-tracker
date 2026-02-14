@@ -106,7 +106,7 @@ mkdir -p "$HOOKS_DIR"
 mkdir -p "$HOOKS_DIR/shared"
 
 # フックファイルをコピー（6ファイル）
-for FILE in log-session-start.js log-prompt.js log-subagent-start.js log-subagent-stop.js log-stop.js log-session-end.js; do
+for FILE in aidd-log-session-start.js aidd-log-prompt.js aidd-log-subagent-start.js aidd-log-subagent-stop.js aidd-log-stop.js aidd-log-session-end.js; do
     if [ -f "$HOOKS_SRC/$FILE" ]; then
         cp "$HOOKS_SRC/$FILE" "$HOOKS_DIR/$FILE"
         echo "  コピー: $FILE"
@@ -179,12 +179,12 @@ if (!settings.hooks) settings.hooks = {};
 
 // Tracker が管理するフック定義
 const trackerHooks = {
-    SessionStart:      { command: 'node \"' + hooksDir + '/log-session-start.js\"', timeout: 15 },
-    UserPromptSubmit:  { command: 'node \"' + hooksDir + '/log-prompt.js\"', timeout: 10 },
-    SubagentStart:     { command: 'node \"' + hooksDir + '/log-subagent-start.js\"', timeout: 10 },
-    SubagentStop:      { command: 'node \"' + hooksDir + '/log-subagent-stop.js\"', timeout: 15 },
-    Stop:              { command: 'node \"' + hooksDir + '/log-stop.js\"', timeout: 30 },
-    SessionEnd:        { command: 'node \"' + hooksDir + '/log-session-end.js\"', timeout: 10 },
+    SessionStart:      { command: 'node \"' + hooksDir + '/aidd-log-session-start.js\"', timeout: 15 },
+    UserPromptSubmit:  { command: 'node \"' + hooksDir + '/aidd-log-prompt.js\"', timeout: 10 },
+    SubagentStart:     { command: 'node \"' + hooksDir + '/aidd-log-subagent-start.js\"', timeout: 10 },
+    SubagentStop:      { command: 'node \"' + hooksDir + '/aidd-log-subagent-stop.js\"', timeout: 15 },
+    Stop:              { command: 'node \"' + hooksDir + '/aidd-log-stop.js\"', timeout: 30 },
+    SessionEnd:        { command: 'node \"' + hooksDir + '/aidd-log-session-end.js\"', timeout: 10 },
 };
 
 for (const [event, def] of Object.entries(trackerHooks)) {
@@ -193,7 +193,7 @@ for (const [event, def] of Object.entries(trackerHooks)) {
     // 既存のトラッカーフックを除去（再インストール対応）
     for (const group of settings.hooks[event]) {
         if (group.hooks) {
-            group.hooks = group.hooks.filter(h => !h.command || !h.command.includes('/hooks/log-'));
+            group.hooks = group.hooks.filter(h => !h.command || !h.command.includes('/hooks/aidd-log-'));
         }
     }
     // 空になったグループを削除
@@ -236,42 +236,42 @@ echo ""
 
 # テスト実行
 echo "  動作テスト..."
-TEST_RESULT=$(echo '{"session_id":"install-test","prompt":"test","model":"test"}' | node "$HOOKS_DIR/log-session-start.js" 2>&1; echo $?)
+TEST_RESULT=$(echo '{"session_id":"install-test","prompt":"test","model":"test"}' | node "$HOOKS_DIR/aidd-log-session-start.js" 2>&1; echo $?)
 if [ "$(echo "$TEST_RESULT" | tail -1)" = "0" ]; then
     echo "    SessionStart hook: OK"
 else
     echo "    SessionStart hook: FAILED"
 fi
 
-TEST_RESULT=$(echo '{"session_id":"install-test","prompt":"test"}' | node "$HOOKS_DIR/log-prompt.js" 2>&1; echo $?)
+TEST_RESULT=$(echo '{"session_id":"install-test","prompt":"test"}' | node "$HOOKS_DIR/aidd-log-prompt.js" 2>&1; echo $?)
 if [ "$(echo "$TEST_RESULT" | tail -1)" = "0" ]; then
     echo "    UserPromptSubmit hook: OK"
 else
     echo "    UserPromptSubmit hook: FAILED"
 fi
 
-TEST_RESULT=$(echo '{"session_id":"install-test","prompt":"test"}' | node "$HOOKS_DIR/log-subagent-start.js" 2>&1; echo $?)
+TEST_RESULT=$(echo '{"session_id":"install-test","prompt":"test"}' | node "$HOOKS_DIR/aidd-log-subagent-start.js" 2>&1; echo $?)
 if [ "$(echo "$TEST_RESULT" | tail -1)" = "0" ]; then
     echo "    SubagentStart hook: OK"
 else
     echo "    SubagentStart hook: FAILED"
 fi
 
-TEST_RESULT=$(echo '{"session_id":"install-test","prompt":"test"}' | node "$HOOKS_DIR/log-subagent-stop.js" 2>&1; echo $?)
+TEST_RESULT=$(echo '{"session_id":"install-test","prompt":"test"}' | node "$HOOKS_DIR/aidd-log-subagent-stop.js" 2>&1; echo $?)
 if [ "$(echo "$TEST_RESULT" | tail -1)" = "0" ]; then
     echo "    SubagentStop hook: OK"
 else
     echo "    SubagentStop hook: FAILED"
 fi
 
-TEST_RESULT=$(echo '{"session_id":"install-test"}' | node "$HOOKS_DIR/log-stop.js" 2>&1; echo $?)
+TEST_RESULT=$(echo '{"session_id":"install-test"}' | node "$HOOKS_DIR/aidd-log-stop.js" 2>&1; echo $?)
 if [ "$(echo "$TEST_RESULT" | tail -1)" = "0" ]; then
     echo "    Stop hook: OK"
 else
     echo "    Stop hook: FAILED"
 fi
 
-TEST_RESULT=$(echo '{"session_id":"install-test"}' | node "$HOOKS_DIR/log-session-end.js" 2>&1; echo $?)
+TEST_RESULT=$(echo '{"session_id":"install-test"}' | node "$HOOKS_DIR/aidd-log-session-end.js" 2>&1; echo $?)
 if [ "$(echo "$TEST_RESULT" | tail -1)" = "0" ]; then
     echo "    SessionEnd hook: OK"
 else

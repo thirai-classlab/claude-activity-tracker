@@ -112,7 +112,7 @@ if (-not (Test-Path $SharedDir)) {
 }
 
 # 6つのフックファイルをコピー
-foreach ($file in @("log-session-start.js", "log-prompt.js", "log-subagent-start.js", "log-subagent-stop.js", "log-stop.js", "log-session-end.js")) {
+foreach ($file in @("aidd-log-session-start.js", "aidd-log-prompt.js", "aidd-log-subagent-start.js", "aidd-log-subagent-stop.js", "aidd-log-stop.js", "aidd-log-session-end.js")) {
     $src = Join-Path $HooksSrc $file
     if (Test-Path $src) {
         Copy-Item $src -Destination (Join-Path $HooksDir $file) -Force
@@ -200,12 +200,12 @@ if (fs.existsSync(settingsPath)) {
 if (!settings.hooks) settings.hooks = {};
 
 const trackerHooks = {
-    SessionStart:      { command: "node \"__HOOKS_DIR__/log-session-start.js\"", timeout: 15 },
-    UserPromptSubmit:  { command: "node \"__HOOKS_DIR__/log-prompt.js\"", timeout: 10 },
-    SubagentStart:     { command: "node \"__HOOKS_DIR__/log-subagent-start.js\"", timeout: 10 },
-    SubagentStop:      { command: "node \"__HOOKS_DIR__/log-subagent-stop.js\"", timeout: 15 },
-    Stop:              { command: "node \"__HOOKS_DIR__/log-stop.js\"", timeout: 30 },
-    SessionEnd:        { command: "node \"__HOOKS_DIR__/log-session-end.js\"", timeout: 10 },
+    SessionStart:      { command: "node \"__HOOKS_DIR__/aidd-log-session-start.js\"", timeout: 15 },
+    UserPromptSubmit:  { command: "node \"__HOOKS_DIR__/aidd-log-prompt.js\"", timeout: 10 },
+    SubagentStart:     { command: "node \"__HOOKS_DIR__/aidd-log-subagent-start.js\"", timeout: 10 },
+    SubagentStop:      { command: "node \"__HOOKS_DIR__/aidd-log-subagent-stop.js\"", timeout: 15 },
+    Stop:              { command: "node \"__HOOKS_DIR__/aidd-log-stop.js\"", timeout: 30 },
+    SessionEnd:        { command: "node \"__HOOKS_DIR__/aidd-log-session-end.js\"", timeout: 10 },
 };
 
 for (const [event, def] of Object.entries(trackerHooks)) {
@@ -213,7 +213,7 @@ for (const [event, def] of Object.entries(trackerHooks)) {
 
     for (const group of settings.hooks[event]) {
         if (group.hooks) {
-            group.hooks = group.hooks.filter(h => !h.command || !h.command.includes("/hooks/log-"));
+            group.hooks = group.hooks.filter(h => !h.command || !h.command.includes("/hooks/aidd-log-"));
         }
     }
     settings.hooks[event] = settings.hooks[event].filter(g => g.hooks && g.hooks.length > 0);
@@ -270,37 +270,37 @@ Write-Host ""
 # テスト
 Write-Host "  動作テスト..."
 try {
-    '{"session_id":"install-test","prompt":"test","model":"test"}' | & node (Join-Path $HooksDir "log-session-start.js") 2>&1 | Out-Null
+    '{"session_id":"install-test","prompt":"test","model":"test"}' | & node (Join-Path $HooksDir "aidd-log-session-start.js") 2>&1 | Out-Null
     Write-Host "    SessionStart hook: OK" -ForegroundColor Green
 } catch {
     Write-Host "    SessionStart hook: FAILED" -ForegroundColor Red
 }
 try {
-    '{"session_id":"install-test","prompt":"test"}' | & node (Join-Path $HooksDir "log-prompt.js") 2>&1 | Out-Null
+    '{"session_id":"install-test","prompt":"test"}' | & node (Join-Path $HooksDir "aidd-log-prompt.js") 2>&1 | Out-Null
     Write-Host "    UserPromptSubmit hook: OK" -ForegroundColor Green
 } catch {
     Write-Host "    UserPromptSubmit hook: FAILED" -ForegroundColor Red
 }
 try {
-    '{"session_id":"install-test","prompt":"test"}' | & node (Join-Path $HooksDir "log-subagent-start.js") 2>&1 | Out-Null
+    '{"session_id":"install-test","prompt":"test"}' | & node (Join-Path $HooksDir "aidd-log-subagent-start.js") 2>&1 | Out-Null
     Write-Host "    SubagentStart hook: OK" -ForegroundColor Green
 } catch {
     Write-Host "    SubagentStart hook: FAILED" -ForegroundColor Red
 }
 try {
-    '{"session_id":"install-test","prompt":"test"}' | & node (Join-Path $HooksDir "log-subagent-stop.js") 2>&1 | Out-Null
+    '{"session_id":"install-test","prompt":"test"}' | & node (Join-Path $HooksDir "aidd-log-subagent-stop.js") 2>&1 | Out-Null
     Write-Host "    SubagentStop hook: OK" -ForegroundColor Green
 } catch {
     Write-Host "    SubagentStop hook: FAILED" -ForegroundColor Red
 }
 try {
-    '{"session_id":"install-test","prompt":"test"}' | & node (Join-Path $HooksDir "log-stop.js") 2>&1 | Out-Null
+    '{"session_id":"install-test","prompt":"test"}' | & node (Join-Path $HooksDir "aidd-log-stop.js") 2>&1 | Out-Null
     Write-Host "    Stop hook: OK" -ForegroundColor Green
 } catch {
     Write-Host "    Stop hook: FAILED" -ForegroundColor Red
 }
 try {
-    '{"session_id":"install-test","prompt":"test"}' | & node (Join-Path $HooksDir "log-session-end.js") 2>&1 | Out-Null
+    '{"session_id":"install-test","prompt":"test"}' | & node (Join-Path $HooksDir "aidd-log-session-end.js") 2>&1 | Out-Null
     Write-Host "    SessionEnd hook: OK" -ForegroundColor Green
 } catch {
     Write-Host "    SessionEnd hook: FAILED" -ForegroundColor Red

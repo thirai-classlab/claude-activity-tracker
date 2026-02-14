@@ -38,7 +38,7 @@ if (Test-Path $SharedDir) {
 }
 
 # 6つのフックファイル + 設定ファイル + キャッシュファイルを削除
-foreach ($file in @("log-session-start.js", "log-prompt.js", "log-subagent-start.js", "log-subagent-stop.js", "log-stop.js", "log-session-end.js", "package.json", "config.json", ".claude-email-cache", "debug.log")) {
+foreach ($file in @("aidd-log-session-start.js", "aidd-log-prompt.js", "aidd-log-subagent-start.js", "aidd-log-subagent-stop.js", "aidd-log-stop.js", "aidd-log-session-end.js", "package.json", "config.json", ".claude-email-cache", "debug.log")) {
     $path = Join-Path $HooksDir $file
     if (Test-Path $path) {
         Remove-Item $path -Force
@@ -64,7 +64,20 @@ const fs = require("fs");
 const p = "__SETTINGS_PATH__";
 try {
     const s = JSON.parse(fs.readFileSync(p, "utf8"));
-    delete s.hooks;
+    if (s.hooks) {
+        for (const event of Object.keys(s.hooks)) {
+            if (Array.isArray(s.hooks[event])) {
+                for (const group of s.hooks[event]) {
+                    if (group.hooks) {
+                        group.hooks = group.hooks.filter(h => !h.command || !h.command.includes("/hooks/aidd-log-"));
+                    }
+                }
+                s.hooks[event] = s.hooks[event].filter(g => g.hooks && g.hooks.length > 0);
+                if (s.hooks[event].length === 0) delete s.hooks[event];
+            }
+        }
+        if (Object.keys(s.hooks).length === 0) delete s.hooks;
+    }
     fs.writeFileSync(p, JSON.stringify(s, null, 2) + "\n", "utf8");
     console.log("  Updated: " + p);
 } catch(e) { console.log("  Skipped: " + e.message); }

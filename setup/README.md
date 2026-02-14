@@ -61,12 +61,12 @@ powershell -ExecutionPolicy Bypass -File install-win.ps1
     ├── package.json            ← CommonJS 設定
     ├── shared/
     │   └── utils.js            ← 共通ユーティリティ（15関数）
-    ├── log-session-start.js    ← SessionStart: セッション作成
-    ├── log-prompt.js           ← UserPromptSubmit: ターン記録
-    ├── log-subagent-start.js   ← SubagentStart: サブエージェント開始
-    ├── log-subagent-stop.js    ← SubagentStop: サブエージェント終了
-    ├── log-stop.js             ← Stop: トランスクリプト解析・全データ送信
-    └── log-session-end.js      ← SessionEnd: セッション終了
+    ├── aidd-log-session-start.js    ← SessionStart: セッション作成
+    ├── aidd-log-prompt.js           ← UserPromptSubmit: ターン記録
+    ├── aidd-log-subagent-start.js   ← SubagentStart: サブエージェント開始
+    ├── aidd-log-subagent-stop.js    ← SubagentStop: サブエージェント終了
+    ├── aidd-log-stop.js             ← Stop: トランスクリプト解析・全データ送信
+    └── aidd-log-session-end.js      ← SessionEnd: セッション終了
 ```
 
 ### インストール後
@@ -158,7 +158,7 @@ API URL や API Key を後から変更したい場合は、このファイルを
 
 5. **フックの手動テスト**
    ```bash
-   echo '{"session_id":"test","prompt":"test","model":"test"}' | node ~/.claude/hooks/log-session-start.js
+   echo '{"session_id":"test","prompt":"test","model":"test"}' | node ~/.claude/hooks/aidd-log-session-start.js
    ```
 
 ---
@@ -179,8 +179,8 @@ powershell -ExecutionPolicy Bypass -File claude-activity-tracker\setup\uninstall
 
 ### アンインストーラーが行うこと
 
-- `~/.claude/hooks/` 内のフックファイル（6個 + shared/）を削除
-- `~/.claude/settings.json` から `hooks` セクションを削除
+- `~/.claude/hooks/` 内の `aidd-log-*` フックファイル（6個 + shared/ + config.json 等）を削除
+- `~/.claude/settings.json` から `aidd-log-` を含むフック設定のみ削除（他のフック設定は保持）
 - 一時ファイル（classic-level 等）を削除
 
 ---
@@ -209,7 +209,8 @@ IP は1時間キャッシュされるため、VPN 切替直後は古い IP が�
 
 ### Q: 既に別のフック設定がある場合はどうなりますか？
 
-インストーラは既存のフック設定を保持し、Tracker 用フックのみを追加します。
+インストーラ・アンインストーラともに既存のフック設定を保持します。
+Tracker のフックは `aidd-log-` プレフィックスで識別されるため、他のフックに影響しません。
 念のためバックアップを推奨します：
 
 ```bash
@@ -218,7 +219,7 @@ cp ~/.claude/settings.json ~/.claude/settings.json.bak
 
 ### Q: プロンプトの内容が記録されるのが気になります
 
-`log-prompt.js` でプロンプトの先頭500文字のみ記録しています。
+`aidd-log-prompt.js` でプロンプトの先頭500文字のみ記録しています。
 記録を無効にしたい場合は `config.json` に `"disable_prompt": true` を追加してください。
 
 ---

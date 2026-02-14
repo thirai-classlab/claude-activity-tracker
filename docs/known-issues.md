@@ -62,12 +62,12 @@
   session-start より先に prompt が到着する場合がある。
   `hookService.ts` の `findOrCreateSession()` でスタブセッションを作成して対応済み。
 
-- **transcript 解析は log-stop.js のみ**: JSONL トランスクリプトの完全解析（トークン集計、ツール使用抽出、
+- **transcript 解析は aidd-log-stop.js のみ**: JSONL トランスクリプトの完全解析（トークン集計、ツール使用抽出、
   ファイル変更一覧）は Stop フック側で行い、構造化データとして API に POST する。
   サーバー側では解析しない（データ受信と DB 書き込みのみ）。
 
 - **timeout 設定**: 各フックには timeout が設定されている（10-30秒）。
-  transcript が大きい場合は log-stop.js の timeout (30秒) に注意。
+  transcript が大きい場合は aidd-log-stop.js の timeout (30秒) に注意。
 
 ## メンバー識別
 
@@ -86,7 +86,7 @@
 ## settings.json のフック設定
 
 - インストーラは **既存のフック設定を保持** してマージする（上書きしない）。
-- Tracker のフックは `/hooks/log-` を含むコマンドで識別し、再インストール時は古いエントリを除去してから追加。
+- Tracker のフックは `/hooks/aidd-log-` を含むコマンドで識別し、再インストール時は古いエントリを除去してから追加。
 - アンインストーラは `hooks` セクション全体を削除するため、他のフック設定も消える点に注意。
 
 ## トラブルシューティング

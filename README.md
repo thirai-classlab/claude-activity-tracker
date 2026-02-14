@@ -11,15 +11,15 @@
 ```mermaid
 graph TB
     subgraph "メンバー A の PC"
-        CC_A[Claude Code] -->|イベント発火| H_A["~/.claude/hooks/<br/>log-*.js (6種)"]
+        CC_A[Claude Code] -->|イベント発火| H_A["~/.claude/hooks/<br/>aidd-log-*.js (6種)"]
     end
 
     subgraph "メンバー B の PC"
-        CC_B[Claude Code] -->|イベント発火| H_B["~/.claude/hooks/<br/>log-*.js (6種)"]
+        CC_B[Claude Code] -->|イベント発火| H_B["~/.claude/hooks/<br/>aidd-log-*.js (6種)"]
     end
 
     subgraph "メンバー C の PC"
-        CC_C[Claude Code] -->|イベント発火| H_C["~/.claude/hooks/<br/>log-*.js (6種)"]
+        CC_C[Claude Code] -->|イベント発火| H_C["~/.claude/hooks/<br/>aidd-log-*.js (6種)"]
     end
 
     H_A -->|HTTP POST| API
@@ -84,22 +84,32 @@ KPI サマリー・日別トークン推移・ツール使用状況・時間帯�
 
 ```mermaid
 graph LR
-    A["Step 1<br/>サーバー起動<br/>(Docker)"] --> B["Step 2<br/>config.json に<br/>サーバー URL を設定"]
+    A["Step 1<br/>初期設定<br/>(init.sh)"] --> B["Step 2<br/>サーバー起動<br/>(Docker)"]
     B --> C["Step 3<br/>各メンバーの PC に<br/>フックをインストール"]
 ```
 
-### Step 1: サーバーを起動する（Docker）
+### Step 1: 初期設定
 
-> 詳細は [server/.env.example](server/.env.example) を参照
+`init.sh` を実行すると、対話式でサーバー設定（`server/.env`）とフック配布用設定（`setup/hooks/config.json`）を生成します。
+
+```bash
+cd claude-activity-tracker
+bash init.sh
+```
+
+以下の設定が対話式に行われます:
+
+| 設定項目 | 生成ファイル | 説明 |
+|---------|-------------|------|
+| DATABASE_URL, PORT, API_KEY, BASIC_AUTH_PASSWORD | `server/.env` | サーバー環境変数。API_KEY は自動生成 |
+| api_url, api_key, debug | `setup/hooks/config.json` | フック配布用。api_key は .env と自動同期 |
+
+> 既にファイルが存在する場合はスキップされます。手動で設定したい場合は `cp server/.env.example server/.env` と `cp setup/hooks/config.json.example setup/hooks/config.json` で作成してください。
+
+### Step 2: サーバーを起動する（Docker）
 
 ```bash
 cd claude-activity-tracker/server
-
-# 環境変数ファイルを作成
-cp .env.example .env
-
-# API キーを生成して設定（本番環境では必須）
-echo "API_KEY=$(openssl rand -hex 32)" >> .env
 
 # Docker Compose でビルド & 起動（MariaDB + API）
 docker compose up -d --build
@@ -115,26 +125,12 @@ curl http://localhost:3001/health
 
 > **Docker を使わない場合**は [手動セットアップ](#手動セットアップ開発用) を参照してください。
 
-### Step 2: サーバー URL と API キーを確認する
-
-各メンバーが Step 3 のインストーラで入力するために、以下を控えます。
-
-```bash
-# サーバー URL
-例: http://192.168.1.100:3001
-例: https://your-server.example.com
-
-# API キー（.env に設定した値）
-grep API_KEY .env
-```
-
-> **API キーはサーバーの `.env` とクライアントの `config.json` で一致させる必要があります。**
-
 ### Step 3: 各メンバーの PC にフックをインストール
 
 > 詳細は [setup/README.md](setup/README.md) を参照
 
 `setup/` フォルダを各メンバーに配布し、インストーラを実行してもらいます。
+`setup/hooks/config.json` に Step 1 で設定した API URL と API Key が含まれているため、メンバーは入力不要でインストールできます。
 
 **macOS:**
 ```bash
@@ -148,15 +144,13 @@ cd claude-activity-tracker\setup
 powershell -ExecutionPolicy Bypass -File install-win.ps1
 ```
 
-インストーラが API URL の入力を求めるので、Step 2 で確認した URL を入力します。
-
 **インストール後、Claude Code を再起動してください。** 次回のセッションから自動的にデータが記録されます。
 
 #### 配布方法
 
 | 方法 | 手順 |
 |------|------|
-| Git clone | リポジトリを clone → `setup/` ディレクトリでインストーラ実行 |
+| Git clone | リポジトリを clone → `bash init.sh` → `setup/` ディレクトリでインストーラ実行 |
 | 共有フォルダ | `setup/` フォルダを社内共有ドライブに配置 |
 | ZIP 配布 | `setup/` フォルダを ZIP 圧縮して配布 |
 
@@ -258,16 +252,20 @@ erDiagram
 
 ```
 claude-activity-tracker/
+├── init.sh               初期設定スクリプト（.env + config.json 生成）
 ├── server/               API サーバー（Express + Prisma + TypeScript）
 │   ├── src/              ソースコード
 │   ├── prisma/           スキーマ + シードデータ
 │   ├── views/            ダッシュボード（EJS）
 │   ├── public/           静的ファイル（JS）
 │   ├── scripts/          テストスクリプト
+│   ├── .env.example      環境変数テンプレート
 │   ├── Dockerfile        Docker イメージ定義
 │   └── docker-compose.yml
 ├── setup/                フックインストーラー（各メンバーに配布）
 │   ├── hooks/            フックスクリプト（配布用）
+│   │   ├── config.json.example  設定テンプレート
+│   │   └── aidd-log-*.js        6種のフックスクリプト
 │   ├── install-mac.sh / install-win.ps1
 │   ├── uninstall-mac.sh / uninstall-win.ps1
 │   └── README.md         フックインストールガイド
@@ -347,6 +345,7 @@ pm2 startup && pm2 save
 | `COST_SONNET_INPUT` | - | `3` | Sonnet 入力単価 |
 | `COST_SONNET_OUTPUT` | - | `15` | Sonnet 出力単価 |
 | `COST_HAIKU_INPUT` | - | `0.80` | Haiku 入力単価 |
+| `BASIC_AUTH_PASSWORD` | - | なし（未設定時は認証なし） | ダッシュボード UI の Basic 認証パスワード。`/api/*` と `/health` はスキップ |
 | `COST_HAIKU_OUTPUT` | - | `4` | Haiku 出力単価 |
 
 ---
@@ -406,7 +405,7 @@ cat ~/.claude/settings.json
 cat ~/.claude/hooks/config.json
 
 # 5. フックの手動テスト
-echo '{"session_id":"test","prompt":"test","model":"test"}' | node ~/.claude/hooks/log-session-start.js
+echo '{"session_id":"test","prompt":"test","model":"test"}' | node ~/.claude/hooks/aidd-log-session-start.js
 ```
 
 ---

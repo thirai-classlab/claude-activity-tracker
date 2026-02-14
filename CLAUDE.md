@@ -7,7 +7,7 @@ Hook → API サーバー → ダッシュボード の構成。
 
 ```
 各メンバーPC                          サーバー (Docker)
-~/.claude/hooks/log-*.js (6種)  →  Express + Prisma + EJS
+~/.claude/hooks/aidd-log-*.js (6種)  →  Express + Prisma + EJS
   POST /api/hook/*                   /api/hook/* (6EP)
                                      /api/dashboard/* (18EP)
                                      MariaDB (Docker Compose)
@@ -27,8 +27,10 @@ Hook → API サーバー → ダッシュボード の構成。
 | `server/views/dashboard.ejs` | ダッシュボード HTML |
 | `server/public/js/dashboard.js` | フロントエンド JS（~2500行） |
 | `setup/hooks/shared/utils.js` | フック共通ユーティリティ（15関数） |
-| `setup/hooks/log-*.js` | 6種のフックスクリプト |
+| `setup/hooks/aidd-log-*.js` | 6種のフックスクリプト |
+| `setup/hooks/config.json.example` | フック設定テンプレート |
 | `setup/install-mac.sh` / `install-win.ps1` | インストーラ |
+| `init.sh` | 初期設定スクリプト（.env + config.json 生成） |
 
 ## 技術スタック
 
@@ -37,6 +39,7 @@ Express 4 + TypeScript, Prisma 6 (MariaDB), EJS + Chart.js 4, Docker (node:20-sl
 ## 開発コマンド
 
 ```bash
+bash init.sh                    # 初期設定（.env + config.json 生成）
 cd server/
 docker compose up -d --build    # Docker 起動（推奨）
 npm run dev                     # ローカル開発（ホットリロード）
@@ -49,7 +52,7 @@ npx prisma studio               # DB GUI
 - **DB は MariaDB**（Docker Compose で `mariadb:11` コンテナを起動）
 - Raw SQL では `CAST(... AS DOUBLE)` を使用（Prisma の BigInt 問題回避）
 - フックの実行順序は保証されない → `hookService.ts` の `findOrCreateSession()` でスタブ作成対応
-- transcript 解析はフック側（`log-stop.js`）で行い、サーバーは DB 書き込みのみ
+- transcript 解析はフック側（`aidd-log-stop.js`）で行い、サーバーは DB 書き込みのみ
 - メンバー識別は `gitEmail`（`git config user.email`）が主キー
 - **API キー認証**: Hook API は `X-API-Key` ヘッダーで保護。サーバー `.env`（`API_KEY`）とクライアント `config.json`（`api_key`）で同じ値を設定する。未設定時は認証スキップ（開発モード）。Docker で `.env` を変更した場合は `docker compose up -d --force-recreate` が必要（`restart` では反映されない）
 
