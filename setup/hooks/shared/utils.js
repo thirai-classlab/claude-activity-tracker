@@ -596,17 +596,8 @@ function parseTranscript(transcriptPath) {
     }
 
     // --- file-history-snapshot entries ---
-    if (type === 'file-history-snapshot') {
-      const files = obj.files || obj.file_paths || [];
-      if (Array.isArray(files)) {
-        for (const fp of files) {
-          const filePath = typeof fp === 'string' ? fp : (fp.path || '');
-          if (filePath && !result.fileChanges.some((fc) => fc.filePath === filePath)) {
-            result.fileChanges.push({ filePath, operation: 'snapshot' });
-          }
-        }
-      }
-    }
+    // Skip: these are files Claude "saw", not actual modifications.
+    // Only Write/Edit tool uses count as real file changes.
   }
 
   // Finalize the last turn

@@ -91,6 +91,7 @@ const debug = createDebugger(hookDir, config, 'Stop');
       tool_input_summary: t.inputSummary,
       status: t.status,
       error_message: t.errorMessage,
+      turn_index: t.turnIndex ?? null,
     })),
     file_changes: parsed.fileChanges.map((fc) => ({
       file_path: fc.filePath,

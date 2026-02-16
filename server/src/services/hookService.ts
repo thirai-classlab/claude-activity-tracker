@@ -320,6 +320,7 @@ export async function handleStop(data: {
     tool_input_summary: string;
     status: string;
     error_message?: string;
+    turn_index?: number | null;
   }>;
   file_changes?: Array<{ file_path: string; operation: string; turn_index?: number | null }>;
   session_events?: Array<{
@@ -386,12 +387,24 @@ export async function handleStop(data: {
   });
 
   // Create tool_use records (main agent's tool uses, subagentId = null)
+  // Delete existing records first to prevent duplicates on re-runs
   if (data.tool_uses?.length) {
+    await prisma.toolUse.deleteMany({ where: { sessionId, subagentId: null } });
+    const turns = await prisma.turn.findMany({
+      where: { sessionId },
+      orderBy: { turnNumber: 'asc' },
+      select: { id: true },
+    });
+    // Compute offset: align transcript turn indices to DB turns from the end
+    const maxTuIdx = Math.max(...data.tool_uses.map(t => t.turn_index ?? -1));
+    const tuOffset = maxTuIdx >= 0 ? turns.length - maxTuIdx - 1 : 0;
     await prisma.toolUse.createMany({
       data: data.tool_uses.map((t) => {
         const name = t.tool_name || '';
+        const alignedIdx = t.turn_index != null ? t.turn_index + tuOffset : -1;
         return {
           sessionId,
+          turnId: (alignedIdx >= 0 && alignedIdx < turns.length) ? turns[alignedIdx].id : null,
           toolUseUuid: t.tool_use_uuid || '',
           toolName: name,
           toolCategory: t.tool_category || null,
@@ -407,23 +420,32 @@ export async function handleStop(data: {
     });
   }
 
-  // Create file_change records (link to turns if turn_index is available)
+  // Create file_change records — only real modifications (write/edit), not snapshots
+  // Delete existing and recreate to prevent duplicates on re-runs
   if (data.file_changes?.length) {
-    // Pre-fetch turns to map turn_index → turn_id
+    await prisma.fileChange.deleteMany({ where: { sessionId, toolUseId: null } });
     const turns = await prisma.turn.findMany({
       where: { sessionId },
       orderBy: { turnNumber: 'asc' },
       select: { id: true },
     });
-
-    await prisma.fileChange.createMany({
-      data: data.file_changes.map((f) => ({
-        sessionId,
-        filePath: f.file_path,
-        operation: f.operation,
-        turnId: (f.turn_index != null && turns[f.turn_index]) ? turns[f.turn_index].id : null,
-      })),
-    });
+    // Filter out snapshot operations (file-history-snapshot)
+    const realChanges = data.file_changes.filter(f => f.operation !== 'snapshot');
+    if (realChanges.length) {
+      const maxFcIdx = Math.max(...realChanges.map(f => f.turn_index ?? -1));
+      const fcOffset = maxFcIdx >= 0 ? turns.length - maxFcIdx - 1 : 0;
+      await prisma.fileChange.createMany({
+        data: realChanges.map((f) => {
+          const alignedIdx = f.turn_index != null ? f.turn_index + fcOffset : -1;
+          return {
+            sessionId,
+            filePath: f.file_path,
+            operation: f.operation,
+            turnId: (alignedIdx >= 0 && alignedIdx < turns.length) ? turns[alignedIdx].id : null,
+          };
+        }),
+      });
+    }
   }
 
   // Create session_event records
