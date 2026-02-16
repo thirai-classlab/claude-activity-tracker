@@ -1,6 +1,6 @@
 'use client';
 
-import { Bar, Line } from 'react-chartjs-2';
+import { Bar } from 'react-chartjs-2';
 import type { ChartData } from 'chart.js';
 import type { DailyStatsItem } from '@/lib/types';
 import { COLORS } from '@/lib/constants';
@@ -27,11 +27,6 @@ export function TokenForecastChart({ data, forecastDays = 7 }: TokenForecastChar
     ...forecasts.map(f => f.date),
   ];
 
-  const actualData = allDates.map(date => {
-    const item = dailyTokens.find(d => d.date === date);
-    return item ? item.tokens : null;
-  });
-
   const forecastData = allDates.map(date => {
     const item = forecasts.find(f => f.date === date);
     return item ? item.predicted : null;
@@ -42,21 +37,61 @@ export function TokenForecastChart({ data, forecastDays = 7 }: TokenForecastChar
     datasets: [
       {
         type: 'bar' as const,
-        label: '実績',
-        data: actualData,
-        backgroundColor: COLORS.primary + 'cc',
+        label: 'Input',
+        data: allDates.map(date => {
+          const item = data.find(d => d.date === date);
+          return item ? item.totalInputTokens : null;
+        }),
+        backgroundColor: COLORS.sonnet + 'cc',
         borderRadius: 3,
+        stack: 'actual',
+        order: 2,
+      },
+      {
+        type: 'bar' as const,
+        label: 'Output',
+        data: allDates.map(date => {
+          const item = data.find(d => d.date === date);
+          return item ? item.totalOutputTokens : null;
+        }),
+        backgroundColor: COLORS.opus + 'cc',
+        borderRadius: 3,
+        stack: 'actual',
+        order: 2,
+      },
+      {
+        type: 'bar' as const,
+        label: 'Cache Create',
+        data: allDates.map(date => {
+          const item = data.find(d => d.date === date);
+          return item ? item.totalCacheCreationTokens : null;
+        }),
+        backgroundColor: COLORS.warning + 'cc',
+        borderRadius: 3,
+        stack: 'actual',
+        order: 2,
+      },
+      {
+        type: 'bar' as const,
+        label: 'Cache Read',
+        data: allDates.map(date => {
+          const item = data.find(d => d.date === date);
+          return item ? item.totalCacheReadTokens : null;
+        }),
+        backgroundColor: COLORS.success + 'cc',
+        borderRadius: 3,
+        stack: 'actual',
         order: 2,
       },
       {
         type: 'line' as const,
         label: '予測',
         data: forecastData,
-        borderColor: COLORS.warning,
+        borderColor: COLORS.danger,
         borderDash: [5, 5],
         borderWidth: 2,
         pointRadius: 3,
-        pointBackgroundColor: COLORS.warning,
+        pointBackgroundColor: COLORS.danger,
         fill: false,
         order: 1,
       },
@@ -78,8 +113,8 @@ export function TokenForecastChart({ data, forecastDays = 7 }: TokenForecastChar
           },
         },
         scales: {
-          x: { grid: { display: false } },
-          y: { ticks: { callback: v => formatCompact(Number(v)) } },
+          x: { stacked: true, grid: { display: false } },
+          y: { stacked: true, ticks: { callback: v => formatCompact(Number(v)) } },
         },
       }}
     />
