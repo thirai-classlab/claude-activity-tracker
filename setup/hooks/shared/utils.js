@@ -554,10 +554,14 @@ function parseTranscript(transcriptPath) {
         result.turnCount++;
 
         // Extract first prompt text (for subagent task name)
-        if (result.firstPrompt === '' && Array.isArray(content)) {
-          const textBlocks = content.filter(b => b.type === 'text');
-          if (textBlocks.length > 0) {
-            result.firstPrompt = textBlocks.map(b => b.text).join('\n').substring(0, 500);
+        if (result.firstPrompt === '') {
+          if (typeof content === 'string') {
+            result.firstPrompt = content.substring(0, 500);
+          } else if (Array.isArray(content)) {
+            const textBlocks = content.filter(b => b.type === 'text');
+            if (textBlocks.length > 0) {
+              result.firstPrompt = textBlocks.map(b => b.text).join('\n').substring(0, 500);
+            }
           }
         }
       }
