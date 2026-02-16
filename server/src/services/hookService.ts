@@ -262,15 +262,31 @@ export async function handleSubagentStop(data: {
     });
   }
 
-  // Create file_change records for subagent file operations
+  // Create file_change records for subagent file operations, linked to tool_uses
   if (data.file_changes?.length) {
+    // Query back the Write/Edit tool uses to link file changes via toolUseId
+    const fileToolUses = await prisma.toolUse.findMany({
+      where: {
+        subagentId: subagent.id,
+        toolName: { in: ['Write', 'Edit', 'MultiEdit', 'NotebookEdit'] },
+      },
+      select: { id: true, toolName: true, toolInputSummary: true },
+    });
+
     await prisma.fileChange.createMany({
-      data: data.file_changes.map((f) => ({
-        sessionId,
-        turnId: subagent.turnId,
-        filePath: f.file_path,
-        operation: f.operation,
-      })),
+      data: data.file_changes.map((f) => {
+        // Match file change to its tool use by operation + file path
+        const matched = fileToolUses.find(
+          (tu) => tu.toolName.toLowerCase() === f.operation && tu.toolInputSummary === f.file_path,
+        );
+        return {
+          sessionId,
+          turnId: subagent.turnId,
+          toolUseId: matched?.id || null,
+          filePath: f.file_path,
+          operation: f.operation,
+        };
+      }),
     });
   }
 }
