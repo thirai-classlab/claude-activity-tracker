@@ -442,46 +442,66 @@ export async function handleStop(data: {
   }
 
   // Update turn durations and response texts if provided
+  // IMPORTANT: Align from the END of the turns array, because transcript
+  // compaction removes early turns — response_texts only has recent turns.
   if (data.turn_durations?.length || data.response_texts?.length) {
     const turns = await prisma.turn.findMany({
       where: { sessionId },
       orderBy: { turnNumber: 'asc' },
     });
 
-    const durCount = Math.min(turns.length, data.turn_durations?.length || 0);
-    for (let i = 0; i < durCount; i++) {
-      await prisma.turn.update({
-        where: { id: turns[i].id },
-        data: {
-          durationMs: data.turn_durations![i].durationMs,
-        },
-      });
+    const now = new Date();
+
+    // Map turn_durations from end
+    if (data.turn_durations?.length) {
+      const durOffset = turns.length - data.turn_durations.length;
+      for (let i = 0; i < data.turn_durations.length; i++) {
+        const turnIdx = durOffset + i;
+        if (turnIdx >= 0 && turnIdx < turns.length) {
+          await prisma.turn.update({
+            where: { id: turns[turnIdx].id },
+            data: { durationMs: data.turn_durations[i].durationMs },
+          });
+        }
+      }
     }
 
-    // Update response texts (with per-turn token/model/stopReason/responseCompletedAt)
-    const rtCount = Math.min(turns.length, data.response_texts?.length || 0);
-    for (let i = 0; i < rtCount; i++) {
-      const rt = data.response_texts![i];
-      // Compute durationMs from promptSubmittedAt and responseCompletedAt
-      let computedDurationMs: number | undefined;
-      if (rt.responseCompletedAt && turns[i].promptSubmittedAt) {
-        const diff = new Date(rt.responseCompletedAt).getTime() - turns[i].promptSubmittedAt!.getTime();
-        if (diff > 0) computedDurationMs = diff;
+    // Map response_texts from end (transcript may be compacted)
+    if (data.response_texts?.length) {
+      const rtOffset = turns.length - data.response_texts.length;
+      for (let i = 0; i < data.response_texts.length; i++) {
+        const turnIdx = rtOffset + i;
+        if (turnIdx < 0 || turnIdx >= turns.length) continue;
+
+        const rt = data.response_texts[i];
+        const turn = turns[turnIdx];
+        const isLatestTurn = (i === data.response_texts.length - 1);
+
+        // Latest turn: use hook fire time (now). Earlier: use transcript timestamp.
+        const responseTime = isLatestTurn ? now : (rt.responseCompletedAt ? new Date(rt.responseCompletedAt) : null);
+
+        // Compute durationMs = responseTime - promptSubmittedAt
+        let computedDurationMs: number | undefined;
+        if (responseTime && turn.promptSubmittedAt) {
+          const diff = responseTime.getTime() - turn.promptSubmittedAt.getTime();
+          if (diff > 0) computedDurationMs = diff;
+        }
+
+        await prisma.turn.update({
+          where: { id: turn.id },
+          data: {
+            responseText: rt.text?.substring(0, 65000) || null,
+            ...(responseTime ? { responseCompletedAt: responseTime } : {}),
+            ...(computedDurationMs != null ? { durationMs: computedDurationMs } : {}),
+            ...(rt.model ? { model: rt.model } : {}),
+            ...(rt.stopReason ? { stopReason: rt.stopReason } : {}),
+            ...(rt.inputTokens != null ? { inputTokens: rt.inputTokens } : {}),
+            ...(rt.outputTokens != null ? { outputTokens: rt.outputTokens } : {}),
+            ...(rt.cacheCreationTokens != null ? { cacheCreationTokens: rt.cacheCreationTokens } : {}),
+            ...(rt.cacheReadTokens != null ? { cacheReadTokens: rt.cacheReadTokens } : {}),
+          },
+        });
       }
-      await prisma.turn.update({
-        where: { id: turns[i].id },
-        data: {
-          responseText: rt.text?.substring(0, 65000) || null,
-          ...(rt.responseCompletedAt ? { responseCompletedAt: new Date(rt.responseCompletedAt) } : {}),
-          ...(computedDurationMs != null ? { durationMs: computedDurationMs } : {}),
-          ...(rt.model ? { model: rt.model } : {}),
-          ...(rt.stopReason ? { stopReason: rt.stopReason } : {}),
-          ...(rt.inputTokens != null ? { inputTokens: rt.inputTokens } : {}),
-          ...(rt.outputTokens != null ? { outputTokens: rt.outputTokens } : {}),
-          ...(rt.cacheCreationTokens != null ? { cacheCreationTokens: rt.cacheCreationTokens } : {}),
-          ...(rt.cacheReadTokens != null ? { cacheReadTokens: rt.cacheReadTokens } : {}),
-        },
-      });
     }
   }
 }
