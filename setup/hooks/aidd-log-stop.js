@@ -110,6 +110,7 @@ const debug = createDebugger(hookDir, config, 'Stop');
       outputTokens: rt.outputTokens,
       cacheCreationTokens: rt.cacheCreationTokens,
       cacheReadTokens: rt.cacheReadTokens,
+      responseCompletedAt: rt.responseCompletedAt || null,
     })),
   };
 

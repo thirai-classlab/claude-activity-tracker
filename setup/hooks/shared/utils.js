@@ -427,6 +427,7 @@ function parseTranscript(transcriptPath) {
   let curTurnOutputTokens = 0;
   let curTurnCacheCreation = 0;
   let curTurnCacheRead = 0;
+  let curTurnLastAssistantTimestamp = null;
 
   function finalizeTurn() {
     if (!turnStarted) return;
@@ -438,6 +439,7 @@ function parseTranscript(transcriptPath) {
       outputTokens: curTurnOutputTokens,
       cacheCreationTokens: curTurnCacheCreation,
       cacheReadTokens: curTurnCacheRead,
+      responseCompletedAt: curTurnLastAssistantTimestamp,
     });
   }
 
@@ -449,6 +451,7 @@ function parseTranscript(transcriptPath) {
     curTurnOutputTokens = 0;
     curTurnCacheCreation = 0;
     curTurnCacheRead = 0;
+    curTurnLastAssistantTimestamp = null;
     turnStarted = true;
   }
 
@@ -461,6 +464,9 @@ function parseTranscript(transcriptPath) {
     // --- assistant entries ---
     if (type === 'assistant') {
       const msg = obj.message || {};
+
+      // Track last assistant timestamp for per-turn response completion time
+      if (obj.timestamp) curTurnLastAssistantTimestamp = obj.timestamp;
 
       // Model
       if (msg.model) result.model = msg.model;

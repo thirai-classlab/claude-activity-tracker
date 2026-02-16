@@ -328,7 +328,7 @@ export async function handleStop(data: {
     event_data?: Record<string, unknown>;
   }>;
   turn_durations?: Array<{ durationMs: number }>;
-  response_texts?: Array<{ text: string; model?: string; stopReason?: string; inputTokens?: number; outputTokens?: number; cacheCreationTokens?: number; cacheReadTokens?: number }>;
+  response_texts?: Array<{ text: string; model?: string; stopReason?: string; inputTokens?: number; outputTokens?: number; cacheCreationTokens?: number; cacheReadTokens?: number; responseCompletedAt?: string | null }>;
 }): Promise<void> {
   // Find or create session
   const sessionId = await findOrCreateSession(data.session_uuid);
@@ -454,19 +454,26 @@ export async function handleStop(data: {
         where: { id: turns[i].id },
         data: {
           durationMs: data.turn_durations![i].durationMs,
-          responseCompletedAt: new Date(),
         },
       });
     }
 
-    // Update response texts (with per-turn token/model/stopReason data)
+    // Update response texts (with per-turn token/model/stopReason/responseCompletedAt)
     const rtCount = Math.min(turns.length, data.response_texts?.length || 0);
     for (let i = 0; i < rtCount; i++) {
       const rt = data.response_texts![i];
+      // Compute durationMs from promptSubmittedAt and responseCompletedAt
+      let computedDurationMs: number | undefined;
+      if (rt.responseCompletedAt && turns[i].promptSubmittedAt) {
+        const diff = new Date(rt.responseCompletedAt).getTime() - turns[i].promptSubmittedAt!.getTime();
+        if (diff > 0) computedDurationMs = diff;
+      }
       await prisma.turn.update({
         where: { id: turns[i].id },
         data: {
           responseText: rt.text?.substring(0, 65000) || null,
+          ...(rt.responseCompletedAt ? { responseCompletedAt: new Date(rt.responseCompletedAt) } : {}),
+          ...(computedDurationMs != null ? { durationMs: computedDurationMs } : {}),
           ...(rt.model ? { model: rt.model } : {}),
           ...(rt.stopReason ? { stopReason: rt.stopReason } : {}),
           ...(rt.inputTokens != null ? { inputTokens: rt.inputTokens } : {}),
