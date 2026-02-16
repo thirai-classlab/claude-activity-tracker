@@ -520,19 +520,26 @@ function TurnCard({
         <span style={{ color: 'var(--text-secondary)' }}>
           出力: <strong>{formatCompact(turn.outputTokens)}</strong>
         </span>
-        {turn.cacheReadTokens > 0 && (
-          <span style={{ color: 'var(--text-secondary)' }}>
-            キャッシュ読取: <strong>{formatCompact(turn.cacheReadTokens)}</strong>
-          </span>
-        )}
-        {subagentTokens > 0 && (
-          <span style={{ color: 'var(--text-secondary)' }}>
-            サブエージェント: <strong>{formatCompact(subagentTokens)}</strong>
-          </span>
-        )}
-        <span style={{ color: 'var(--text-primary, var(--text-secondary))' }}>
-          合計: <strong>{formatCompact(combinedTokens)}</strong>
+        <span style={{ color: 'var(--text-secondary)' }}>
+          キャッシュ作成: <strong>{formatCompact(turn.cacheCreationTokens)}</strong>
         </span>
+        <span style={{ color: 'var(--text-secondary)' }}>
+          キャッシュ読取: <strong>{formatCompact(turn.cacheReadTokens)}</strong>
+        </span>
+        <span style={{ color: 'var(--text-primary, var(--text-secondary))', fontWeight: 500 }}>
+          合計: <strong>{formatCompact(mainTokens)}</strong>
+        </span>
+        {subagentTokens > 0 && (
+          <>
+            <span style={{ color: 'var(--text-muted)' }}>|</span>
+            <span style={{ color: 'var(--text-secondary)' }}>
+              サブエージェント: <strong>{formatCompact(subagentTokens)}</strong>
+            </span>
+            <span style={{ color: 'var(--text-primary, var(--text-secondary))', fontWeight: 500 }}>
+              総合計: <strong>{formatCompact(combinedTokens)}</strong>
+            </span>
+          </>
+        )}
       </div>
 
       {/* Prompt text */}
