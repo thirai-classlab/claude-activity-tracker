@@ -98,6 +98,7 @@ a {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  overflow-x: hidden;
 }
 
 .page-header {
@@ -107,6 +108,8 @@ a {
 .page-body {
   padding: 20px 28px 40px;
   flex: 1;
+  overflow-x: hidden;
+  min-width: 0;
 }
 
 /* === KPI Cards === */
@@ -1741,12 +1744,16 @@ a {
 /* ─── Timeline / Prompt Feed ───────────────────────────────────────── */
 
 /* Controls bar */
+/* ═══════════════════════════════════════════════════════════════════
+   Prompt Feed Timeline — Tree hierarchy (User → Repo → Branch)
+   ═══════════════════════════════════════════════════════════════════ */
+
 .tl-controls {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 10px;
-  padding: 6px 8px;
+  padding: 8px 12px;
   background: var(--bg-card);
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
@@ -1756,7 +1763,7 @@ a {
 
 .tl-live-btn {
   display: flex; align-items: center; gap: 6px;
-  padding: 4px 12px;
+  padding: 5px 14px;
   font-size: 12px; font-weight: 600;
   border-radius: 20px;
   border: 1px solid rgba(34,197,94,0.3);
@@ -1797,7 +1804,7 @@ a {
   border-radius: 6px; padding: 2px;
 }
 .tl-period-tab {
-  padding: 3px 12px; font-size: 12px; font-weight: 500;
+  padding: 4px 14px; font-size: 12px; font-weight: 500;
   border-radius: 4px; border: none;
   background: transparent; color: var(--text-muted);
   cursor: pointer; transition: all 0.15s ease;
@@ -1814,7 +1821,7 @@ a {
 }
 .tl-stat {
   flex: 1; display: flex; align-items: center; gap: 6px;
-  padding: 8px 12px;
+  padding: 8px 14px;
   background: var(--bg-card); border: 1px solid var(--border);
   border-radius: var(--radius-md);
 }
@@ -1822,7 +1829,7 @@ a {
 .tl-stat-value { font-size: 16px; font-weight: 700; color: var(--text-primary); font-variant-numeric: tabular-nums; }
 .tl-stat-label { font-size: 11px; color: var(--text-muted); }
 
-/* Main container */
+/* ── Main container ───────────────────────────────────────── */
 .tl-container {
   display: flex;
   background: var(--bg-card);
@@ -1830,89 +1837,143 @@ a {
   border: 1px solid var(--border);
   overflow: hidden;
   min-height: 120px;
+  max-width: 100%;
 }
 
-/* Left labels */
+/* ── Left labels (tree panel) ─────────────────────────────── */
 .tl-labels {
   flex-shrink: 0;
   border-right: 1px solid var(--border);
   background: var(--bg-sidebar);
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 .tl-labels-header {
+  display: flex; align-items: center;
+  padding: 0 14px;
   border-bottom: 1px solid var(--border);
   background: rgba(0,0,0,0.15);
 }
-
-.tl-group {
-  border-bottom: 1px solid var(--border);
+.tl-labels-header-text {
+  font-size: 10px; font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-muted);
 }
-.tl-group:last-child { border-bottom: none; }
 
-/* User header row */
-.tl-user-header {
+/* ── Tree: shared pieces ─────────────────────────────────── */
+.tl-tree-chevron {
+  display: flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: color 0.15s;
+}
+.tl-tree-indent {
+  width: 16px; flex-shrink: 0;
+}
+.tl-tree-badge {
+  margin-left: auto; flex-shrink: 0;
+  font-size: 10px; font-weight: 700;
+  color: var(--text-muted);
+  background: rgba(255,255,255,0.06);
+  padding: 1px 7px; border-radius: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.tl-tree-badge-sm {
+  margin-left: auto; flex-shrink: 0;
+  font-size: 9px; font-weight: 600;
+  color: var(--text-muted);
+  background: rgba(255,255,255,0.04);
+  padding: 0 5px; border-radius: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Tree: User level ────────────────────────────────────── */
+.tl-tree-user {
   display: flex; align-items: center; gap: 6px;
-  padding: 0 12px;
+  padding: 0 14px 0 8px;
   background: rgba(0,0,0,0.12);
-  border-bottom: 1px solid rgba(51,65,85,0.2);
+  border-bottom: 1px solid rgba(51,65,85,0.3);
+  cursor: pointer;
+  transition: background 0.15s;
 }
-.tl-user-dot {
+.tl-tree-user:hover { background: rgba(0,0,0,0.18); }
+.tl-tree-user-dot {
   width: 8px; height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
   box-shadow: 0 0 6px rgba(59,130,246,0.3);
 }
-.tl-user-name {
-  font-size: 11px; font-weight: 700;
+.tl-tree-user-name {
+  font-size: 13px; font-weight: 700;
   color: var(--text-primary);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.tl-user-count {
-  font-size: 10px; font-weight: 600;
-  color: var(--text-muted);
-  background: rgba(255,255,255,0.06);
-  padding: 0 5px; border-radius: 8px;
-  margin-left: auto; flex-shrink: 0;
+
+/* ── Tree: Repo level ────────────────────────────────────── */
+.tl-tree-repo {
+  display: flex; align-items: center; gap: 5px;
+  padding: 0 14px 0 8px;
+  background: rgba(0,0,0,0.06);
+  border-bottom: 1px solid rgba(51,65,85,0.18);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.tl-tree-repo:hover { background: rgba(0,0,0,0.10); }
+.tl-tree-repo-icon { color: var(--text-muted); flex-shrink: 0; }
+.tl-tree-repo-name {
+  font-size: 12px; font-weight: 600;
+  color: var(--text-secondary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-/* Session label rows */
-.tl-label-row {
-  display: flex; align-items: center;
-  border-bottom: 1px solid rgba(51,65,85,0.15);
-}
-.tl-label-row:last-child { border-bottom: none; }
-
-.tl-label-content {
+/* ── Tree: Branch level ──────────────────────────────────── */
+.tl-tree-branch {
   display: flex; align-items: center; gap: 4px;
-  padding: 0 8px 0 12px;
-  overflow: hidden; white-space: nowrap;
-  font-size: 11px; width: 100%;
+  padding: 0 14px 0 8px;
+  border-bottom: 1px solid rgba(51,65,85,0.12);
+  cursor: pointer;
+  transition: background 0.15s;
 }
-.tl-label-indent {
-  width: 12px; height: 0;
+.tl-tree-branch:hover { background: rgba(59,130,246,0.04); }
+.tl-tree-branch-icon { color: var(--info); flex-shrink: 0; }
+.tl-tree-branch-name {
+  font-size: 11px; font-weight: 500;
+  color: var(--info);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* ── Tree: Session row ───────────────────────────────────── */
+.tl-tree-session {
+  display: flex; align-items: center; gap: 5px;
+  padding: 0 14px 0 8px;
+  border-bottom: 1px solid rgba(51,65,85,0.08);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.tl-tree-session:hover { background: rgba(59,130,246,0.06); }
+.tl-tree-session-line {
+  width: 10px; height: 0;
   border-bottom: 1px dashed;
   flex-shrink: 0;
-  opacity: 0.4;
+  opacity: 0.5;
 }
-.tl-repo {
+.tl-tree-session-id {
+  font-size: 11px; font-weight: 600;
   color: var(--text-secondary);
-  font-weight: 500;
-  overflow: hidden; text-overflow: ellipsis;
-}
-.tl-separator { color: rgba(148,163,184,0.3); flex-shrink: 0; }
-.tl-branch {
-  color: var(--info); font-weight: 500;
-  overflow: hidden; text-overflow: ellipsis;
-}
-.tl-session-id {
-  font-size: 10px; color: var(--text-muted);
-  margin-left: auto; flex-shrink: 0;
   font-variant-numeric: tabular-nums;
 }
+.tl-tree-session-count {
+  font-size: 10px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
 
-/* Scrollable area */
+/* ── Scrollable timeline area ────────────────────────────── */
 .tl-scroll {
   flex: 1;
+  min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
 }
@@ -1926,7 +1987,7 @@ a {
 
 .tl-canvas { position: relative; min-width: 100%; }
 
-/* Time axis */
+/* Time axis header */
 .tl-axis {
   position: relative;
   border-bottom: 1px solid var(--border);
@@ -1977,26 +2038,32 @@ a {
   border: 1px solid rgba(34,197,94,0.3);
 }
 
-/* Group rows in body */
-.tl-group-rows {
-  border-bottom: 1px solid var(--border);
+/* Body: hierarchy spacer rows (non-session) */
+.tl-body-user {
+  border-bottom: 1px solid rgba(51,65,85,0.3);
+  background: rgba(0,0,0,0.08);
 }
-.tl-group-rows:last-child { border-bottom: none; }
+.tl-body-repo {
+  border-bottom: 1px solid rgba(51,65,85,0.18);
+  background: rgba(0,0,0,0.04);
+}
+.tl-body-branch {
+  border-bottom: 1px solid rgba(51,65,85,0.12);
+}
 
 /* Session rows */
 .tl-row {
   position: relative;
-  border-bottom: 1px solid rgba(51,65,85,0.12);
+  border-bottom: 1px solid rgba(51,65,85,0.08);
   cursor: pointer;
   transition: background 0.15s ease;
 }
 .tl-row:hover { background: rgba(59,130,246,0.06); }
-.tl-row:last-child { border-bottom: none; }
 
 /* Session span bar */
 .tl-session-bar {
   position: absolute;
-  top: 5px; bottom: 5px;
+  top: 6px; bottom: 6px;
   border-radius: 4px;
   border: 1px solid;
   pointer-events: none;
@@ -2033,7 +2100,7 @@ a {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: 10px 14px;
-  max-width: 340px; min-width: 200px;
+  max-width: 380px; min-width: 220px;
   box-shadow: 0 8px 32px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.05);
   pointer-events: none;
   transform: translate(-50%, -100%);
@@ -2070,10 +2137,10 @@ a {
   background: var(--accent);
   display: inline-block;
 }
-.tl-legend-dot--sm { width: 6px; height: 6px; }
-.tl-legend-dot--md { width: 8px; height: 8px; }
-.tl-legend-dot--lg { width: 10px; height: 10px; }
-.tl-legend-dot--xl { width: 12px; height: 12px; }
+.tl-legend-dot--sm { width: 7px; height: 7px; }
+.tl-legend-dot--md { width: 9px; height: 9px; }
+.tl-legend-dot--lg { width: 11px; height: 11px; }
+.tl-legend-dot--xl { width: 14px; height: 14px; }
 .tl-legend-sep {
   width: 1px; height: 12px;
   background: var(--border);
