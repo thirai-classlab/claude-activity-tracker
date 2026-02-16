@@ -1,6 +1,7 @@
 'use client';
 
-import Link from 'next/link';
+import { useState, useMemo } from 'react';
+import { ChevronRight, ChevronDown, FileText, FilePlus, FileEdit, FileX, Zap } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { KpiCard } from '@/components/shared/KpiCard';
 import { KpiGrid } from '@/components/shared/KpiGrid';
@@ -22,6 +23,17 @@ import { totalTokens } from '@/lib/tokenUtils';
 import type { TurnDetail, ToolUseDetail, SubagentDetail, FileChangeDetail } from '@/lib/types';
 
 // ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+interface SessionEvent {
+  eventType: string;
+  eventSubtype: string | null;
+  eventData: unknown;
+  occurredAt: string;
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -33,8 +45,6 @@ function formatDuration(ms: number | null): string {
   const sec = totalSec % 60;
   return `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
 }
-
-// Use shared formatter from @/lib/formatters (imported as formatSessionDurationShared)
 
 function formatTime(dateStr: string | null): string {
   if (!dateStr) return '-';
@@ -51,17 +61,50 @@ function formatTime(dateStr: string | null): string {
   }
 }
 
-function opBadge(op: string): { label: string; color: string } {
+function opIcon(op: string) {
   const opLower = op.toLowerCase();
-  if (opLower.includes('create') || opLower === 'write')
-    return { label: '作成', color: 'var(--success)' };
-  if (opLower.includes('modif') || opLower === 'edit')
-    return { label: '変更', color: 'var(--warning)' };
-  if (opLower.includes('delet') || opLower === 'remove')
-    return { label: '削除', color: 'var(--danger)' };
-  if (opLower === 'read')
-    return { label: '読取', color: 'var(--info)' };
-  return { label: op, color: 'var(--text-muted)' };
+  if (opLower.includes('create') || opLower === 'write') return <FilePlus size={13} style={{ color: 'var(--success)' }} />;
+  if (opLower.includes('modif') || opLower === 'edit') return <FileEdit size={13} style={{ color: 'var(--warning)' }} />;
+  if (opLower.includes('delet') || opLower === 'remove') return <FileX size={13} style={{ color: 'var(--danger)' }} />;
+  if (opLower === 'read') return <FileText size={13} style={{ color: 'var(--info)' }} />;
+  return <FileText size={13} style={{ color: 'var(--text-muted)' }} />;
+}
+
+function opLabel(op: string): string {
+  const opLower = op.toLowerCase();
+  if (opLower.includes('create') || opLower === 'write') return '作成';
+  if (opLower.includes('modif') || opLower === 'edit') return '変更';
+  if (opLower.includes('delet') || opLower === 'remove') return '削除';
+  if (opLower === 'read') return '読取';
+  return op;
+}
+
+/** Assign session events to the nearest preceding turn by timestamp */
+function assignEventsToTurns(
+  turns: TurnDetail[],
+  events: SessionEvent[]
+): Map<number, SessionEvent[]> {
+  const map = new Map<number, SessionEvent[]>();
+  if (!events.length || !turns.length) return map;
+
+  // Sort turns by promptSubmittedAt
+  const sortedTurns = turns
+    .filter(t => t.promptSubmittedAt)
+    .map(t => ({ turnNumber: t.turnNumber, time: new Date(t.promptSubmittedAt!).getTime() }))
+    .sort((a, b) => a.time - b.time);
+
+  for (const ev of events) {
+    const evTime = new Date(ev.occurredAt).getTime();
+    // Find the last turn that started before or at this event
+    let assigned = sortedTurns[0]?.turnNumber ?? 0;
+    for (const t of sortedTurns) {
+      if (t.time <= evTime) assigned = t.turnNumber;
+      else break;
+    }
+    if (!map.has(assigned)) map.set(assigned, []);
+    map.get(assigned)!.push(ev);
+  }
+  return map;
 }
 
 // ---------------------------------------------------------------------------
@@ -134,37 +177,194 @@ function SubagentBlock({ sub }: { sub: SubagentDetail }) {
   );
 }
 
-function FileChangesBlock({ files }: { files: FileChangeDetail[] }) {
-  // Deduplicate by operation + path
+/** System event types that are not useful per-turn */
+const SYSTEM_EVENT_TYPES = new Set(['turn_duration', 'compact']);
+
+/** Collapsible toggle for file changes + events per turn */
+function TurnDetailsToggle({
+  fileChanges,
+  events,
+}: {
+  fileChanges: FileChangeDetail[];
+  events: SessionEvent[];
+}) {
+  const [open, setOpen] = useState(false);
+  const MAX_EVENTS_DISPLAY = 10;
+
+  // Deduplicate files
   const seen = new Set<string>();
-  const unique = files.filter(f => {
+  const uniqueFiles = fileChanges.filter(f => {
     const key = `${f.operation}:${f.filePath}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
 
-  if (unique.length === 0) return null;
+  // Filter out system-level events that aren't useful per-turn
+  const meaningfulEvents = events.filter(ev => !SYSTEM_EVENT_TYPES.has(ev.eventType));
+
+  // Count by operation type
+  const opCounts = new Map<string, number>();
+  for (const f of uniqueFiles) {
+    const label = opLabel(f.operation);
+    opCounts.set(label, (opCounts.get(label) || 0) + 1);
+  }
+
+  const hasContent = uniqueFiles.length > 0 || meaningfulEvents.length > 0;
+  if (!hasContent) return null;
+
+  // Build summary badges
+  const summaryBadges: { label: string; count: number; color: string }[] = [];
+  for (const [label, count] of opCounts) {
+    const color = label === '作成' ? 'var(--success)'
+      : label === '変更' ? 'var(--warning)'
+      : label === '削除' ? 'var(--danger)'
+      : label === '読取' ? 'var(--info)'
+      : 'var(--text-muted)';
+    summaryBadges.push({ label, count, color });
+  }
+  if (meaningfulEvents.length > 0) {
+    summaryBadges.push({ label: 'イベント', count: meaningfulEvents.length, color: 'var(--info)' });
+  }
 
   return (
-    <div className="turn-files">
-      <div className="turn-section-label">ファイル変更</div>
-      {unique.map((f, i) => {
-        const { label, color } = opBadge(f.operation);
-        const isLast = i === unique.length - 1;
-        return (
-          <div key={i} className="turn-file-row">
-            <span className="turn-tree-prefix">{isLast ? '└─' : '├─'}</span>
-            <span className="turn-file-op" style={{ color }}>{label}</span>
-            <span className="turn-file-path">{f.filePath}</span>
-          </div>
-        );
-      })}
+    <div style={{
+      margin: '6px 0',
+      border: '1px solid var(--border-color, rgba(255,255,255,0.08))',
+      borderRadius: '6px',
+      overflow: 'hidden',
+    }}>
+      {/* Toggle header */}
+      <button
+        onClick={() => setOpen(!open)}
+        style={{
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          padding: '8px 12px',
+          background: 'var(--bg-tertiary, rgba(255,255,255,0.02))',
+          border: 'none',
+          cursor: 'pointer',
+          color: 'var(--text-secondary)',
+          fontSize: '12px',
+        }}
+      >
+        {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        <span style={{ fontWeight: 500 }}>詳細</span>
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+          {summaryBadges.map((b, i) => (
+            <span
+              key={i}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '3px',
+                padding: '1px 8px',
+                borderRadius: '10px',
+                fontSize: '11px',
+                fontWeight: 500,
+                background: b.color + '18',
+                color: b.color,
+              }}
+            >
+              {b.label} {b.count}
+            </span>
+          ))}
+        </div>
+      </button>
+
+      {/* Expanded content */}
+      {open && (
+        <div style={{ padding: '8px 12px', display: 'flex', gap: '16px' }}>
+          {/* Left: File changes */}
+          {uniqueFiles.length > 0 && (
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                ファイル変更 ({uniqueFiles.length})
+              </div>
+              {uniqueFiles.map((f, i) => {
+                const fileName = f.filePath.split('/').pop() || f.filePath;
+                const dir = f.filePath.substring(0, f.filePath.length - fileName.length);
+                return (
+                  <div key={i} style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '3px 0',
+                    fontSize: '12px',
+                  }}>
+                    {opIcon(f.operation)}
+                    <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{dir}</span>
+                    <span style={{ fontWeight: 500 }}>{fileName}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Right: Events */}
+          {meaningfulEvents.length > 0 && (
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                イベント ({meaningfulEvents.length})
+              </div>
+              {meaningfulEvents.slice(0, MAX_EVENTS_DISPLAY).map((ev, i) => (
+                <div key={i} style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '3px 0',
+                  fontSize: '12px',
+                }}>
+                  <Zap size={13} style={{ color: 'var(--info)', flexShrink: 0 }} />
+                  <span style={{
+                    padding: '1px 6px',
+                    borderRadius: '3px',
+                    background: 'var(--info, #06b6d4)' + '20',
+                    color: 'var(--info, #06b6d4)',
+                    fontSize: '11px',
+                    fontWeight: 500,
+                    whiteSpace: 'nowrap',
+                  }}>
+                    {ev.eventType}
+                  </span>
+                  {ev.eventSubtype && (
+                    <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
+                      {ev.eventSubtype}
+                    </span>
+                  )}
+                  <span style={{ color: 'var(--text-secondary)', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {typeof ev.eventData === 'string'
+                      ? truncate(ev.eventData, 60)
+                      : ev.eventData
+                        ? truncate(JSON.stringify(ev.eventData), 60)
+                        : ''}
+                  </span>
+                </div>
+              ))}
+              {meaningfulEvents.length > MAX_EVENTS_DISPLAY && (
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', padding: '4px 0', fontStyle: 'italic' }}>
+                  他 {meaningfulEvents.length - MAX_EVENTS_DISPLAY}件
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-function TurnCard({ turn, isLast }: { turn: TurnDetail; isLast: boolean }) {
+function TurnCard({
+  turn,
+  isLast,
+  events,
+}: {
+  turn: TurnDetail;
+  isLast: boolean;
+  events: SessionEvent[];
+}) {
   const mainTokens = totalTokens(turn);
   const mainToolUses = turn.toolUses || [];
   const fileChanges = turn.fileChanges || [];
@@ -194,7 +394,7 @@ function TurnCard({ turn, isLast }: { turn: TurnDetail; isLast: boolean }) {
         </div>
       </div>
 
-      {/* Token summary at turn top */}
+      {/* Token summary */}
       {combinedTokens > 0 && (
         <div className="turn-token-summary" style={{
           display: 'flex',
@@ -207,16 +407,16 @@ function TurnCard({ turn, isLast }: { turn: TurnDetail; isLast: boolean }) {
           margin: '4px 0 8px 0',
         }}>
           <span style={{ color: 'var(--text-secondary)' }}>
-            メイン: <strong>{formatCompact(mainTokens)}</strong> tokens
+            メイン: <strong>{formatCompact(mainTokens)}</strong>
           </span>
           {subagentTokens > 0 && (
             <span style={{ color: 'var(--text-secondary)' }}>
-              サブエージェント合計: <strong>{formatCompact(subagentTokens)}</strong> tokens
+              サブエージェント: <strong>{formatCompact(subagentTokens)}</strong>
             </span>
           )}
           {subagentTokens > 0 && (
             <span style={{ color: 'var(--text-primary, var(--text-secondary))' }}>
-              合計: <strong>{formatCompact(combinedTokens)}</strong> tokens
+              合計: <strong>{formatCompact(combinedTokens)}</strong>
             </span>
           )}
         </div>
@@ -258,11 +458,6 @@ function TurnCard({ turn, isLast }: { turn: TurnDetail; isLast: boolean }) {
         </div>
       )}
 
-      {/* File changes */}
-      {fileChanges.length > 0 && (
-        <FileChangesBlock files={fileChanges} />
-      )}
-
       {/* Subagents */}
       {subagents.length > 0 && (
         <div className="turn-section">
@@ -272,6 +467,9 @@ function TurnCard({ turn, isLast }: { turn: TurnDetail; isLast: boolean }) {
           ))}
         </div>
       )}
+
+      {/* File changes + Events toggle (side by side) */}
+      <TurnDetailsToggle fileChanges={fileChanges} events={events} />
 
       {/* Response text */}
       {turn.responseText && (
@@ -306,6 +504,17 @@ export function SessionDetailPage({ sessionId }: SessionDetailPageProps) {
   // Compute session total time from turn durations and average turn time
   const sessionTotalMs = d.turns.reduce((sum, t) => sum + (t.durationMs || 0), 0);
   const avgTurnMs = d.turnCount > 0 ? Math.round(sessionTotalMs / d.turnCount) : 0;
+
+  // Assign session events to turns by timestamp
+  const eventsByTurn = assignEventsToTurns(d.turns, d.sessionEvents);
+
+  // Collect events not assigned to any turn (before first turn)
+  const unassignedEvents = d.sessionEvents.filter(ev => {
+    for (const evList of eventsByTurn.values()) {
+      if (evList.includes(ev)) return false;
+    }
+    return true;
+  });
 
   return (
     <>
@@ -404,7 +613,12 @@ export function SessionDetailPage({ sessionId }: SessionDetailPageProps) {
         <ChartCard title={`ターンタイムライン (${d.turns.length}件)`}>
           <div className="turn-timeline">
             {d.turns.map((turn, i) => (
-              <TurnCard key={turn.turnNumber} turn={turn} isLast={i === d.turns.length - 1} />
+              <TurnCard
+                key={turn.turnNumber}
+                turn={turn}
+                isLast={i === d.turns.length - 1}
+                events={eventsByTurn.get(turn.turnNumber) || []}
+              />
             ))}
             {d.turns.length === 0 && (
               <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
@@ -414,68 +628,29 @@ export function SessionDetailPage({ sessionId }: SessionDetailPageProps) {
           </div>
         </ChartCard>
 
-        {/* Session-level file changes (unlinked to specific turns) */}
-        {d.sessionFileChanges && d.sessionFileChanges.length > 0 && (
-          <ChartCard title={`変更ファイル一覧 (${d.sessionFileChanges.length}件)`}>
-            <div className="session-file-changes">
-              {(() => {
-                // Deduplicate by filePath, keep last operation
-                const fileMap = new Map<string, string>();
-                for (const fc of d.sessionFileChanges) {
-                  fileMap.set(fc.filePath, fc.operation);
-                }
-                return Array.from(fileMap.entries()).map(([path, op]) => {
-                  const fileName = path.split('/').pop() || path;
-                  const dir = path.substring(0, path.length - fileName.length);
-                  return (
-                    <div key={path} className="session-file-item">
-                      <span className={`file-op-badge file-op-${op}`}>{op}</span>
-                      <span className="file-dir">{dir}</span>
-                      <span className="file-name">{fileName}</span>
-                    </div>
-                  );
-                });
-              })()}
+        {/* Unassigned events (before first turn or no turns) */}
+        {unassignedEvents.length > 0 && (
+          <ChartCard title={`その他のイベント (${unassignedEvents.length}件)`}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '8px 0' }}>
+              {unassignedEvents.map((ev, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+                  <span style={{ color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{formatTime(ev.occurredAt)}</span>
+                  <span style={{
+                    padding: '1px 6px',
+                    borderRadius: '3px',
+                    background: 'var(--info, #06b6d4)' + '20',
+                    color: 'var(--info, #06b6d4)',
+                    fontSize: '11px',
+                    fontWeight: 500,
+                  }}>
+                    {ev.eventType}
+                  </span>
+                  {ev.eventSubtype && (
+                    <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{ev.eventSubtype}</span>
+                  )}
+                </div>
+              ))}
             </div>
-          </ChartCard>
-        )}
-
-        {/* Session Events */}
-        {d.sessionEvents.length > 0 && (
-          <ChartCard title={`セッションイベント (${d.sessionEvents.length}件)`}>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>時刻</th>
-                  <th>種別</th>
-                  <th>詳細</th>
-                </tr>
-              </thead>
-              <tbody>
-                {d.sessionEvents.map((ev, i) => (
-                  <tr key={i}>
-                    <td style={{ fontSize: '12px', whiteSpace: 'nowrap', color: 'var(--text-muted)' }}>
-                      {formatTime(ev.occurredAt)}
-                    </td>
-                    <td>
-                      <span className="badge badge-info">{ev.eventType}</span>
-                      {ev.eventSubtype && (
-                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginLeft: '6px' }}>
-                          {ev.eventSubtype}
-                        </span>
-                      )}
-                    </td>
-                    <td style={{ fontSize: '12px', color: 'var(--text-secondary)', maxWidth: '400px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {typeof ev.eventData === 'string'
-                        ? truncate(ev.eventData, 100)
-                        : ev.eventData
-                          ? truncate(JSON.stringify(ev.eventData), 100)
-                          : '-'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
           </ChartCard>
         )}
       </div>
