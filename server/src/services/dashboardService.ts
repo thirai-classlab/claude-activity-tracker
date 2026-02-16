@@ -658,9 +658,37 @@ export async function getSessionDetail(id: number) {
     .filter(fc => fc.turnId === null)
     .map(fc => ({ filePath: fc.filePath, operation: fc.operation }));
 
+  // Compute durationMs for turns that don't have it stored.
+  // Strategy: duration = next turn's promptSubmittedAt - this turn's promptSubmittedAt
+  // Last turn: session.endedAt - this turn's promptSubmittedAt
+  const turnsWithDuration = enrichedTurns.map((turn, idx) => {
+    if (turn.durationMs != null && turn.durationMs > 0) return turn;
+    if (!turn.promptSubmittedAt) return turn;
+
+    const startMs = new Date(turn.promptSubmittedAt).getTime();
+    let endMs: number | null = null;
+
+    // Look for next turn's promptSubmittedAt
+    for (let j = idx + 1; j < enrichedTurns.length; j++) {
+      if (enrichedTurns[j].promptSubmittedAt) {
+        endMs = new Date(enrichedTurns[j].promptSubmittedAt!).getTime();
+        break;
+      }
+    }
+    // Fallback: use session endedAt
+    if (endMs == null && session.endedAt) {
+      endMs = new Date(session.endedAt).getTime();
+    }
+
+    if (endMs != null && endMs > startMs) {
+      return { ...turn, durationMs: endMs - startMs };
+    }
+    return turn;
+  });
+
   return {
     ...session,
-    turns: enrichedTurns,
+    turns: turnsWithDuration,
     turnCount: actualTurnCount,
     summary: session.summary,
     sessionFileChanges,
