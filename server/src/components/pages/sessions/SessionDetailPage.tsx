@@ -139,6 +139,7 @@ function ToolUseRow({ tool, isLast }: { tool: ToolUseDetail; isLast: boolean }) 
 }
 
 function SubagentBlock({ sub }: { sub: SubagentDetail }) {
+  const [detailOpen, setDetailOpen] = useState(false);
   const subTotalTokens = totalTokens(sub);
   const taskName = sub.description || sub.promptText;
 
@@ -151,6 +152,26 @@ function SubagentBlock({ sub }: { sub: SubagentDetail }) {
     seen.add(key);
     return true;
   });
+
+  const hasDetails = sub.toolUses.length > 0 || uniqueSubFiles.length > 0;
+
+  // Build summary badges for accordion
+  const detailBadges: { label: string; count: number; color: string }[] = [];
+  if (sub.toolUses.length > 0) {
+    detailBadges.push({ label: 'ツール', count: sub.toolUses.length, color: 'var(--info)' });
+  }
+  const fileOpCounts = new Map<string, number>();
+  for (const f of uniqueSubFiles) {
+    const label = opLabel(f.operation);
+    fileOpCounts.set(label, (fileOpCounts.get(label) || 0) + 1);
+  }
+  for (const [label, count] of fileOpCounts) {
+    const color = label === '作成' ? 'var(--success)'
+      : label === '変更' ? 'var(--warning)'
+      : label === '削除' ? 'var(--danger)'
+      : 'var(--text-muted)';
+    detailBadges.push({ label, count, color });
+  }
 
   return (
     <div className="turn-subagent">
@@ -174,37 +195,90 @@ function SubagentBlock({ sub }: { sub: SubagentDetail }) {
           {sub.cacheReadTokens > 0 && <span>キャッシュ読取: {formatCompact(sub.cacheReadTokens)}</span>}
         </div>
       )}
-      {sub.toolUses.length > 0 && (
-        <div className="turn-tools">
-          {sub.toolUses.map((t, i) => (
-            <ToolUseRow
-              key={i}
-              tool={{ ...t, toolInputSummary: null, errorMessage: null }}
-              isLast={i === sub.toolUses.length - 1}
-            />
-          ))}
-        </div>
-      )}
-      {uniqueSubFiles.length > 0 && (
+      {/* Accordion for tool uses + file changes */}
+      {hasDetails && (
         <div style={{
           marginTop: '6px',
-          padding: '6px 8px',
-          background: 'var(--bg-tertiary, rgba(255,255,255,0.02))',
-          borderRadius: '4px',
-          fontSize: '12px',
+          border: '1px solid var(--border-color, rgba(255,255,255,0.08))',
+          borderRadius: '6px',
+          overflow: 'hidden',
         }}>
-          <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px' }}>
-            ファイル変更 ({uniqueSubFiles.length})
-          </div>
-          {uniqueSubFiles.map((f, i) => {
-            const fileName = f.filePath.split('/').pop() || f.filePath;
-            return (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '2px 0' }}>
-                {opIcon(f.operation)}
-                <span style={{ fontWeight: 500 }}>{fileName}</span>
-              </div>
-            );
-          })}
+          <button
+            onClick={() => setDetailOpen(!detailOpen)}
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '6px 10px',
+              background: 'var(--bg-tertiary, rgba(255,255,255,0.02))',
+              border: 'none',
+              cursor: 'pointer',
+              color: 'var(--text-secondary)',
+              fontSize: '12px',
+            }}
+          >
+            {detailOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+            <span style={{ fontWeight: 500, fontSize: '11px' }}>詳細</span>
+            <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
+              {detailBadges.map((b, i) => (
+                <span
+                  key={i}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '3px',
+                    padding: '1px 7px',
+                    borderRadius: '10px',
+                    fontSize: '10px',
+                    fontWeight: 500,
+                    background: b.color + '18',
+                    color: b.color,
+                  }}
+                >
+                  {b.label} {b.count}
+                </span>
+              ))}
+            </div>
+          </button>
+          {detailOpen && (
+            <div style={{ padding: '6px 10px', display: 'flex', gap: '16px' }}>
+              {/* Left: Tool uses */}
+              {sub.toolUses.length > 0 && (
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    ツール使用 ({sub.toolUses.length})
+                  </div>
+                  <div className="turn-tools">
+                    {sub.toolUses.map((t, i) => (
+                      <ToolUseRow
+                        key={i}
+                        tool={{ ...t, toolInputSummary: null, errorMessage: null }}
+                        isLast={i === sub.toolUses.length - 1}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+              {/* Right: File changes */}
+              {uniqueSubFiles.length > 0 && (
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    ファイル変更 ({uniqueSubFiles.length})
+                  </div>
+                  {uniqueSubFiles.map((f, i) => {
+                    const fileName = f.filePath.split('/').pop() || f.filePath;
+                    return (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '2px 0', fontSize: '12px' }}>
+                        {opIcon(f.operation)}
+                        <span style={{ fontWeight: 500 }}>{fileName}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
