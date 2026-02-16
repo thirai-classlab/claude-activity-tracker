@@ -398,6 +398,7 @@ function parseTranscript(transcriptPath) {
     compactBoundaries: [],
     summaries: [],
     responseTexts: [],
+    firstPrompt: '',
     turnCount: 0,
     errorCount: 0,
   };
@@ -551,6 +552,14 @@ function parseTranscript(transcriptPath) {
 
         curTurnIndex++;
         result.turnCount++;
+
+        // Extract first prompt text (for subagent task name)
+        if (result.firstPrompt === '' && Array.isArray(content)) {
+          const textBlocks = content.filter(b => b.type === 'text');
+          if (textBlocks.length > 0) {
+            result.firstPrompt = textBlocks.map(b => b.text).join('\n').substring(0, 500);
+          }
+        }
       }
     }
 

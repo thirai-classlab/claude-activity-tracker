@@ -190,6 +190,8 @@ export async function handleSubagentStop(data: {
     error_message?: string;
   }>;
   agent_model?: string;
+  description?: string;
+  file_changes?: Array<{ file_path: string; operation: string }>;
 }): Promise<void> {
   // Find the subagent record
   const subagent = await prisma.subagent.findUnique({
@@ -226,6 +228,7 @@ export async function handleSubagentStop(data: {
       stoppedAt,
       durationSeconds,
       agentModel: model,
+      description: data.description || null,
       inputTokens: data.input_tokens || 0,
       outputTokens: data.output_tokens || 0,
       cacheCreationTokens: data.cache_creation_tokens || 0,
@@ -256,6 +259,18 @@ export async function handleSubagentStop(data: {
             : null,
         };
       }),
+    });
+  }
+
+  // Create file_change records for subagent file operations
+  if (data.file_changes?.length) {
+    await prisma.fileChange.createMany({
+      data: data.file_changes.map((f) => ({
+        sessionId,
+        turnId: subagent.turnId,
+        filePath: f.file_path,
+        operation: f.operation,
+      })),
     });
   }
 }

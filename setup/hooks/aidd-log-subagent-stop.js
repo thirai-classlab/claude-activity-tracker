@@ -42,6 +42,11 @@ const debug = createDebugger(hookDir, config, 'SubagentStop');
       error_message: t.errorMessage,
     })),
     agent_model: parsed.model,
+    description: parsed.firstPrompt || '',
+    file_changes: parsed.fileChanges.map((f) => ({
+      file_path: f.filePath,
+      operation: f.operation,
+    })),
   };
 
   debug(`payload keys: ${Object.keys(payload).join(', ')}`);

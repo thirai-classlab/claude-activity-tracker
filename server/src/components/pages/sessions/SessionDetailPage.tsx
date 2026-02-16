@@ -140,6 +140,18 @@ function ToolUseRow({ tool, isLast }: { tool: ToolUseDetail; isLast: boolean }) 
 
 function SubagentBlock({ sub }: { sub: SubagentDetail }) {
   const subTotalTokens = totalTokens(sub);
+  const taskName = sub.description || sub.promptText;
+
+  // Collect file changes from subagent's tool uses
+  const subFileChanges = sub.toolUses.flatMap(t => t.fileChanges || []);
+  const seen = new Set<string>();
+  const uniqueSubFiles = subFileChanges.filter(f => {
+    const key = `${f.operation}:${f.filePath}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
   return (
     <div className="turn-subagent">
       <div className="turn-subagent-header">
@@ -152,8 +164,8 @@ function SubagentBlock({ sub }: { sub: SubagentDetail }) {
           <span className="turn-meta-item">{formatCost(sub.estimatedCost)}</span>
         )}
       </div>
-      {sub.description && (
-        <div className="turn-subagent-desc">{truncate(sub.description, 100)}</div>
+      {taskName && (
+        <div className="turn-subagent-desc">{truncate(taskName, 120)}</div>
       )}
       {subTotalTokens > 0 && (
         <div className="turn-token-row">
@@ -171,6 +183,28 @@ function SubagentBlock({ sub }: { sub: SubagentDetail }) {
               isLast={i === sub.toolUses.length - 1}
             />
           ))}
+        </div>
+      )}
+      {uniqueSubFiles.length > 0 && (
+        <div style={{
+          marginTop: '6px',
+          padding: '6px 8px',
+          background: 'var(--bg-tertiary, rgba(255,255,255,0.02))',
+          borderRadius: '4px',
+          fontSize: '12px',
+        }}>
+          <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px' }}>
+            ファイル変更 ({uniqueSubFiles.length})
+          </div>
+          {uniqueSubFiles.map((f, i) => {
+            const fileName = f.filePath.split('/').pop() || f.filePath;
+            return (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '2px 0' }}>
+                {opIcon(f.operation)}
+                <span style={{ fontWeight: 500 }}>{fileName}</span>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

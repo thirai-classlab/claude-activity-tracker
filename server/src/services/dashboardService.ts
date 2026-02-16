@@ -525,6 +525,7 @@ export async function getSessionDetail(id: number) {
               agentType: true,
               agentModel: true,
               description: true,
+              promptText: true,
               startedAt: true,
               stoppedAt: true,
               durationSeconds: true,
@@ -538,6 +539,9 @@ export async function getSessionDetail(id: number) {
                   toolName: true,
                   toolCategory: true,
                   status: true,
+                  fileChanges: {
+                    select: { filePath: true, operation: true },
+                  },
                 },
               },
             },

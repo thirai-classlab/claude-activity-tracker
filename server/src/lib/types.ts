@@ -128,6 +128,7 @@ export interface SubagentDetail {
   agentType: string;
   agentModel: string | null;
   description: string | null;
+  promptText: string | null;
   startedAt: string | null;
   stoppedAt: string | null;
   durationSeconds: number | null;
@@ -136,7 +137,12 @@ export interface SubagentDetail {
   cacheCreationTokens: number;
   cacheReadTokens: number;
   estimatedCost: number;
-  toolUses: { toolName: string; toolCategory: string | null; status: string | null }[];
+  toolUses: {
+    toolName: string;
+    toolCategory: string | null;
+    status: string | null;
+    fileChanges: { filePath: string; operation: string }[];
+  }[];
 }
 
 export interface FileChangeDetail {
