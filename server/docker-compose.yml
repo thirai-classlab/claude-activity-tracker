@@ -20,11 +20,16 @@ services:
       retries: 5
 
   api:
-    build: .
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_API_KEY: ${NEXT_PUBLIC_API_KEY}
     ports:
       - "3001:3001"
     env_file:
       - .env
+    environment:
+      - NODE_ENV=production
     depends_on:
       db:
         condition: service_healthy

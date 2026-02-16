@@ -20,10 +20,16 @@ Hook → API サーバー → ダッシュボード の構成。
 
 ```
 各メンバーPC                          サーバー (Docker)
-~/.claude/hooks/aidd-log-*.js (6種)  →  Express + Prisma + EJS
+~/.claude/hooks/aidd-log-*.js (6種)  →  Express + Next.js ハイブリッド
   POST /api/hook/*                   /api/hook/* (6EP)
                                      /api/dashboard/* (18EP)
+                                     Next.js App Router (フロントエンド)
                                      MariaDB (Docker Compose)
+
+ルーティング:
+  /            → Next.js (新ダッシュボード)
+  /legacy      → EJS (レガシーダッシュボード)
+  /api/*       → Express API
 ```
 
 ## 主要ディレクトリ
@@ -37,8 +43,12 @@ Hook → API サーバー → ダッシュボード の構成。
 | `server/src/services/costCalculator.ts` | モデル別コスト算出 |
 | `server/src/utils/toolCategory.ts` | ツール分類ロジック |
 | `server/prisma/schema.prisma` | DB スキーマ（7テーブル） |
-| `server/views/dashboard.ejs` | ダッシュボード HTML |
-| `server/public/js/dashboard.js` | フロントエンド JS（~2500行） |
+| `server/src/app/` | Next.js App Router ページ（8ルート） |
+| `server/src/components/` | React コンポーネント（layout/shared/charts/pages） |
+| `server/src/hooks/` | React カスタムフック（useFilters, useApi） |
+| `server/src/lib/` | ユーティリティ（api, types, formatters, hints, trend, regression） |
+| `server/views/dashboard.ejs` | レガシーダッシュボード HTML |
+| `server/public/js/dashboard.js` | レガシーフロントエンド JS（~2500行） |
 | `setup/hooks/shared/utils.js` | フック共通ユーティリティ（15関数） |
 | `setup/hooks/aidd-log-*.js` | 6種のフックスクリプト |
 | `setup/hooks/config.json.example` | フック設定テンプレート |
@@ -47,7 +57,11 @@ Hook → API サーバー → ダッシュボード の構成。
 
 ## 技術スタック
 
-Express 4 + TypeScript, Prisma 6 (MariaDB), EJS + Chart.js 4, Docker (node:20-slim + mariadb:11)
+- **バックエンド**: Express 4 + TypeScript, Prisma 6 (MariaDB)
+- **フロントエンド（新）**: Next.js 15 (App Router) + Tailwind CSS + shadcn/ui + TanStack Query v5 + react-chartjs-2
+- **フロントエンド（レガシー）**: EJS + Chart.js 4 + vanilla JS
+- **インフラ**: Docker (node:20-slim + mariadb:11)
+- **ビルド**: `tsconfig.json`（Next.js）+ `tsconfig.server.json`（Express）のデュアル構成
 
 ## 開発コマンド
 
@@ -67,6 +81,9 @@ npx prisma studio               # DB GUI
 - フックの実行順序は保証されない → `hookService.ts` の `findOrCreateSession()` でスタブ作成対応
 - transcript 解析はフック側（`aidd-log-stop.js`）で行い、サーバーは DB 書き込みのみ
 - メンバー識別は `gitEmail`（`git config user.email`）が主キー
+- **Express + Next.js ハイブリッド**: 単一プロセスでカスタムサーバーパターンを採用。Express API は変更なし、Next.js がフロントエンドを担当。レガシー EJS は `/legacy` で引き続きアクセス可能
+- **デュアル tsconfig**: `tsconfig.json`（Next.js + React）と `tsconfig.server.json`（Express、`src/app`, `src/components`, `src/hooks` を除外）
+- **`NEXT_PUBLIC_API_KEY`**: Next.js クライアントコンポーネントから Dashboard API にアクセスするための環境変数。`.env` に `API_KEY` と同じ値を設定
 - **API キー認証**: Hook API は `X-API-Key` ヘッダーで保護。サーバー `.env`（`API_KEY`）とクライアント `config.json`（`api_key`）で同じ値を設定する。未設定時は認証スキップ（開発モード）。Docker で `.env` を変更した場合は `docker compose up -d --force-recreate` が必要（`restart` では反映されない）
 
 ## 詳細ドキュメント（必要時に参照）
@@ -81,6 +98,7 @@ npx prisma studio               # DB GUI
 | [docs/known-issues.md](docs/known-issues.md) | MariaDB/Windows/フックの注意点・トラブルシューティング | バグ修正・環境問題の調査時 |
 | [docs/hook-test-guide.md](docs/hook-test-guide.md) | フックのテスト手順 | フックの動作確認時 |
 | [docs/ai-productivity-kpi-report.md](docs/ai-productivity-kpi-report.md) | AI駆動開発 生産性KPI企画書 | KPI設計・ダッシュボード拡張時 |
+| [docs/analytics-expansion-plan.md](docs/analytics-expansion-plan.md) | ダッシュボード分析機能 拡張企画書 | 分析機能の追加・新規ページ設計時 |
 | [server/.env.example](server/.env.example) | 環境変数一覧・Docker使用手順 | 設定変更・デプロイ時 |
 | [server/Dockerfile](server/Dockerfile) | Docker イメージ定義 | コンテナ構成を変更するとき |
 

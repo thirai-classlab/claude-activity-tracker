@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "lib": ["ES2022"],
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "declaration": true,
+    "sourceMap": true
+  },
+  "include": [
+    "src/index.ts",
+    "src/routes/**/*",
+    "src/services/**/*",
+    "src/middleware/**/*",
+    "src/lib/prisma.ts",
+    "src/utils/**/*"
+  ],
+  "exclude": ["node_modules", "dist", ".next", "src/app", "src/components", "src/hooks"]
+}

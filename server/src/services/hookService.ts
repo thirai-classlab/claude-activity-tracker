@@ -297,6 +297,7 @@ export async function handleStop(data: {
     event_data?: Record<string, unknown>;
   }>;
   turn_durations?: Array<{ durationMs: number }>;
+  response_texts?: Array<{ text: string; model?: string; stopReason?: string; inputTokens?: number; outputTokens?: number; cacheCreationTokens?: number; cacheReadTokens?: number }>;
 }): Promise<void> {
   // Find or create session
   const sessionId = await findOrCreateSession(data.session_uuid);
@@ -391,20 +392,38 @@ export async function handleStop(data: {
     }
   }
 
-  // Update turn durations if provided
-  if (data.turn_durations?.length) {
+  // Update turn durations and response texts if provided
+  if (data.turn_durations?.length || data.response_texts?.length) {
     const turns = await prisma.turn.findMany({
       where: { sessionId },
       orderBy: { turnNumber: 'asc' },
     });
 
-    const count = Math.min(turns.length, data.turn_durations.length);
-    for (let i = 0; i < count; i++) {
+    const durCount = Math.min(turns.length, data.turn_durations?.length || 0);
+    for (let i = 0; i < durCount; i++) {
       await prisma.turn.update({
         where: { id: turns[i].id },
         data: {
-          durationMs: data.turn_durations[i].durationMs,
+          durationMs: data.turn_durations![i].durationMs,
           responseCompletedAt: new Date(),
+        },
+      });
+    }
+
+    // Update response texts (with per-turn token/model/stopReason data)
+    const rtCount = Math.min(turns.length, data.response_texts?.length || 0);
+    for (let i = 0; i < rtCount; i++) {
+      const rt = data.response_texts![i];
+      await prisma.turn.update({
+        where: { id: turns[i].id },
+        data: {
+          responseText: rt.text?.substring(0, 5000) || null,
+          ...(rt.model ? { model: rt.model } : {}),
+          ...(rt.stopReason ? { stopReason: rt.stopReason } : {}),
+          ...(rt.inputTokens != null ? { inputTokens: rt.inputTokens } : {}),
+          ...(rt.outputTokens != null ? { outputTokens: rt.outputTokens } : {}),
+          ...(rt.cacheCreationTokens != null ? { cacheCreationTokens: rt.cacheCreationTokens } : {}),
+          ...(rt.cacheReadTokens != null ? { cacheReadTokens: rt.cacheReadTokens } : {}),
         },
       });
     }
@@ -424,10 +443,24 @@ export async function handleSessionEnd(data: {
   // but session-start was missed (e.g., hook failure)
   const sessionId = await findOrCreateSession(data.session_uuid);
 
+  // Fetch startedAt to compute duration
+  const session = await prisma.session.findUnique({
+    where: { id: sessionId },
+    select: { startedAt: true },
+  });
+
+  const endedAt = data.ended_at ? new Date(data.ended_at) : new Date();
+  let durationMs: number | null = null;
+  if (session?.startedAt) {
+    durationMs = endedAt.getTime() - session.startedAt.getTime();
+    if (durationMs < 0) durationMs = null;
+  }
+
   await prisma.session.update({
     where: { id: sessionId },
     data: {
-      endedAt: data.ended_at ? new Date(data.ended_at) : new Date(),
+      endedAt,
+      durationMs,
       endReason: data.reason || null,
     },
   });

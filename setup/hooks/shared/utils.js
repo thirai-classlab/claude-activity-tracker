@@ -397,6 +397,7 @@ function parseTranscript(transcriptPath) {
     turnDurations: [],
     compactBoundaries: [],
     summaries: [],
+    responseTexts: [],
     turnCount: 0,
     errorCount: 0,
   };
@@ -412,6 +413,40 @@ function parseTranscript(transcriptPath) {
 
   // Track tool_use blocks by ID for matching with tool_result
   const toolUseMap = new Map();
+
+  // Per-turn response tracking
+  let turnStarted = false;
+  let curTurnTexts = [];
+  let curTurnModel = null;
+  let curTurnStopReason = null;
+  let curTurnInputTokens = 0;
+  let curTurnOutputTokens = 0;
+  let curTurnCacheCreation = 0;
+  let curTurnCacheRead = 0;
+
+  function finalizeTurn() {
+    if (!turnStarted) return;
+    result.responseTexts.push({
+      text: curTurnTexts.join('\n').substring(0, 5000),
+      model: curTurnModel,
+      stopReason: curTurnStopReason,
+      inputTokens: curTurnInputTokens,
+      outputTokens: curTurnOutputTokens,
+      cacheCreationTokens: curTurnCacheCreation,
+      cacheReadTokens: curTurnCacheRead,
+    });
+  }
+
+  function resetTurn() {
+    curTurnTexts = [];
+    curTurnModel = null;
+    curTurnStopReason = null;
+    curTurnInputTokens = 0;
+    curTurnOutputTokens = 0;
+    curTurnCacheCreation = 0;
+    curTurnCacheRead = 0;
+    turnStarted = true;
+  }
 
   for (const line of lines) {
     let obj;
@@ -433,12 +468,26 @@ function parseTranscript(transcriptPath) {
         result.tokens.output += usage.output_tokens || 0;
         result.tokens.cacheCreation += usage.cache_creation_input_tokens || 0;
         result.tokens.cacheRead += usage.cache_read_input_tokens || 0;
+
+        // Per-turn token tracking
+        curTurnInputTokens += usage.input_tokens || 0;
+        curTurnOutputTokens += usage.output_tokens || 0;
+        curTurnCacheCreation += usage.cache_creation_input_tokens || 0;
+        curTurnCacheRead += usage.cache_read_input_tokens || 0;
       }
 
-      // Tool use content blocks
+      // Per-turn model and stop_reason
+      if (msg.model) curTurnModel = msg.model;
+      if (msg.stop_reason) curTurnStopReason = msg.stop_reason;
+
+      // Tool use content blocks + text blocks
       const content = msg.content;
       if (Array.isArray(content)) {
         for (const block of content) {
+          if (block.type === 'text' && block.text) {
+            curTurnTexts.push(block.text);
+          }
+
           if (block.type === 'tool_use') {
             const toolEntry = {
               id: block.id || '',
@@ -468,6 +517,10 @@ function parseTranscript(transcriptPath) {
 
     // --- user entries ---
     if (type === 'user') {
+      // Finalize previous turn before starting a new one
+      finalizeTurn();
+      resetTurn();
+
       result.turnCount++;
 
       // Check tool_result blocks for errors
@@ -525,6 +578,9 @@ function parseTranscript(transcriptPath) {
       }
     }
   }
+
+  // Finalize the last turn
+  finalizeTurn();
 
   // Compute totalInput
   result.tokens.totalInput =

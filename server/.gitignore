@@ -5,3 +5,8 @@ dist/
 .env
 .env.*
 !.env.example
+
+# Next.js
+.next/
+out/
+next-env.d.ts

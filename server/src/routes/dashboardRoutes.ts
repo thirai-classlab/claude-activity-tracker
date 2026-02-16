@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import * as dashboardService from '../services/dashboardService';
 import { DashboardFilters } from '../services/dashboardService';
+import * as analysisService from '../services/analysisService';
 
 export const dashboardRoutes = Router();
 
@@ -252,5 +253,64 @@ dashboardRoutes.get('/prompt-feed', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('prompt-feed error:', error);
     res.status(500).json({ error: 'Failed to get prompt feed' });
+  }
+});
+
+// Note: Chat endpoint has been migrated to Socket.IO (see chatService.ts registerChatSocket)
+
+// ─── GET /analysis-logs — Analysis log list ─────────────────────────────
+
+dashboardRoutes.get('/analysis-logs', async (req: Request, res: Response) => {
+  try {
+    const email = req.query.email as string;
+    if (!email) {
+      res.status(400).json({ error: 'Missing email parameter' });
+      return;
+    }
+    const limit = parseInt(req.query.limit as string, 10) || 10;
+    const offset = parseInt(req.query.offset as string, 10) || 0;
+    const data = await analysisService.getAnalysisLogs(email, limit, offset);
+    res.json(data);
+  } catch (error) {
+    console.error('analysis-logs error:', error);
+    res.status(500).json({ error: 'Failed to get analysis logs' });
+  }
+});
+
+// ─── GET /analysis-logs/:id — Single analysis log ───────────────────────
+
+dashboardRoutes.get('/analysis-logs/:id', async (req: Request, res: Response) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) {
+      res.status(400).json({ error: 'Invalid ID' });
+      return;
+    }
+    const data = await analysisService.getAnalysisLog(id);
+    if (!data) {
+      res.status(404).json({ error: 'Analysis log not found' });
+      return;
+    }
+    res.json(data);
+  } catch (error) {
+    console.error('analysis-log detail error:', error);
+    res.status(500).json({ error: 'Failed to get analysis log' });
+  }
+});
+
+// ─── DELETE /analysis-logs/:id — Delete analysis log ────────────────────
+
+dashboardRoutes.delete('/analysis-logs/:id', async (req: Request, res: Response) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) {
+      res.status(400).json({ error: 'Invalid ID' });
+      return;
+    }
+    await analysisService.deleteAnalysisLog(id);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('analysis-log delete error:', error);
+    res.status(500).json({ error: 'Failed to delete analysis log' });
   }
 });

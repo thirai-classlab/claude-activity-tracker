@@ -32,6 +32,7 @@ model Session {
   ipAddress                String?   @map("ip_address")
   startedAt                DateTime? @map("started_at")
   endedAt                  DateTime? @map("ended_at")
+  durationMs               Int?      @map("duration_ms")
   endReason                String?   @map("end_reason")
   totalInputTokens         Int       @default(0) @map("total_input_tokens")
   totalOutputTokens        Int       @default(0) @map("total_output_tokens")
@@ -75,6 +76,7 @@ model Turn {
   cacheReadTokens     Int       @default(0) @map("cache_read_tokens")
   model               String?
   stopReason          String?   @map("stop_reason")
+  responseText        String?   @map("response_text") @db.MediumText
   createdAt           DateTime  @default(now()) @map("created_at")
 
   session     Session      @relation(fields: [sessionId], references: [id])
@@ -183,4 +185,19 @@ model SessionEvent {
   @@index([sessionId])
   @@index([eventType])
   @@map("session_events")
+}
+
+model AnalysisLog {
+  id           Int       @id @default(autoincrement())
+  memberEmail  String    @map("member_email")
+  analysisType String    @default("member_kpi") @map("analysis_type")
+  periodFrom   DateTime? @map("period_from")
+  periodTo     DateTime? @map("period_to")
+  content      String    @db.LongText
+  metadata     String?   @db.Text
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  @@index([memberEmail])
+  @@index([createdAt])
+  @@map("analysis_logs")
 }

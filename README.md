@@ -49,7 +49,8 @@ graph TB
         API["Hook API<br/>/api/hook/* (6EP)"]
         API --> DB[(MariaDB)]
         DB --> DASH_API["Dashboard API<br/>/api/dashboard/* (18EP)"]
-        DASH_API --> DASH["ダッシュボード<br/>Chart.js + EJS"]
+        DASH_API --> DASH["ダッシュボード<br/>Next.js + Tailwind + shadcn/ui"]
+        DASH_API --> LEGACY["レガシー (/legacy)<br/>Chart.js + EJS"]
     end
 
     BROWSER[ブラウザ] -->|閲覧| DASH
@@ -367,14 +368,21 @@ erDiagram
 ```
 claude-activity-tracker/
 ├── init.sh               初期設定スクリプト（.env + config.json 生成）
-├── server/               API サーバー（Express + Prisma + TypeScript）
-│   ├── src/              ソースコード
+├── server/               API サーバー + ダッシュボード（Express + Next.js ハイブリッド）
+│   ├── src/
+│   │   ├── app/          Next.js App Router ページ（8ルート）
+│   │   ├── components/   React コンポーネント（layout/shared/charts/pages）
+│   │   ├── hooks/        React カスタムフック（useFilters, useApi）
+│   │   ├── lib/          ユーティリティ（api, types, formatters, hints, etc.）
+│   │   ├── routes/       Express API ルート
+│   │   ├── services/     ビジネスロジック
+│   │   └── index.ts      Express + Next.js エントリポイント
 │   ├── prisma/           スキーマ + シードデータ
-│   ├── views/            ダッシュボード（EJS）
-│   ├── public/           静的ファイル（JS）
+│   ├── views/            レガシーダッシュボード（EJS）
+│   ├── public/           静的ファイル
 │   ├── scripts/          テストスクリプト
 │   ├── .env.example      環境変数テンプレート
-│   ├── Dockerfile        Docker イメージ定義
+│   ├── Dockerfile        Docker イメージ定義（マルチステージ）
 │   └── docker-compose.yml
 ├── setup/                フックインストーラー（各メンバーに配布）
 │   ├── hooks/            フックスクリプト（配布用）
@@ -453,6 +461,7 @@ pm2 startup && pm2 save
 | `DATABASE_URL` | 必須 | `mysql://tracker:trackerpass@db:3306/claude_tracker` | MariaDB 接続文字列 |
 | `PORT` | - | `3001` | API サーバーポート |
 | `API_KEY` | 本番: 必須 | なし（未設定時は認証スキップ） | Hook API + Dashboard API の認証キー。`openssl rand -hex 32` で生成。クライアント側 `config.json` の `api_key` と一致させること |
+| `NEXT_PUBLIC_API_KEY` | 本番: 必須 | なし | Next.js フロントエンドから Dashboard API にアクセスするためのキー。`API_KEY` と同じ値を設定 |
 | `BASIC_AUTH_PASSWORD` | - | なし（未設定時は認証なし） | ダッシュボード UI の Basic 認証パスワード。`/api/*` と `/health` はスキップ |
 | `NODE_ENV` | - | `development` | 実行環境 |
 | `COST_OPUS_INPUT` | - | `15` | Opus 入力単価（$/1Mトークン） |
@@ -564,3 +573,4 @@ echo '{"session_id":"test","prompt":"test","model":"test"}' | node ~/.claude/hoo
 | [docs/hook-data-reference.md](docs/hook-data-reference.md) | フックデータリファレンス |
 | [docs/dashboard-design.md](docs/dashboard-design.md) | ダッシュボード設計 |
 | [docs/ai-productivity-kpi-report.md](docs/ai-productivity-kpi-report.md) | AI駆動開発 生産性KPI企画書 |
+| [docs/analytics-expansion-plan.md](docs/analytics-expansion-plan.md) | ダッシュボード分析機能 拡張企画書 |

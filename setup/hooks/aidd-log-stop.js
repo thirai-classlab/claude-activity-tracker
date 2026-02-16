@@ -99,7 +99,16 @@ const debug = createDebugger(hookDir, config, 'Stop');
     })),
     session_events: sessionEvents,
     turn_durations: parsed.turnDurations.map((td) => ({
-      duration_ms: td.durationMs,
+      durationMs: td.durationMs,
+    })),
+    response_texts: parsed.responseTexts.map((rt) => ({
+      text: rt.text,
+      model: rt.model,
+      stopReason: rt.stopReason,
+      inputTokens: rt.inputTokens,
+      outputTokens: rt.outputTokens,
+      cacheCreationTokens: rt.cacheCreationTokens,
+      cacheReadTokens: rt.cacheReadTokens,
     })),
   };
 

@@ -89,9 +89,19 @@ function buildRawWhere(filters: DashboardFilters, tableAlias = 's') {
 export async function getStats(filters: DashboardFilters) {
   const where = buildSessionWhere(filters);
 
-  const [sessionAgg, activeMembers, subagentAgg, toolUseAgg, repoCount] = await Promise.all([
+  // Exclude empty/stub sessions (0 tokens AND no summary)
+  const nonStubWhere = {
+    ...where,
+    NOT: {
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      summary: null,
+    },
+  };
+
+  const [sessionAgg, activeMembers, subagentAgg, toolUseAgg, repoCount, turnAgg] = await Promise.all([
     prisma.session.aggregate({
-      where,
+      where: nonStubWhere,
       _count: { id: true },
       _sum: {
         totalInputTokens: true,
@@ -99,36 +109,39 @@ export async function getStats(filters: DashboardFilters) {
         totalCacheCreationTokens: true,
         totalCacheReadTokens: true,
         estimatedCost: true,
-        turnCount: true,
         subagentCount: true,
         toolUseCount: true,
         errorCount: true,
       },
       _avg: {
-        turnCount: true,
         estimatedCost: true,
       },
     }),
     prisma.session.findMany({
-      where,
+      where: nonStubWhere,
       select: { memberId: true },
       distinct: ['memberId'],
     }),
     prisma.subagent.aggregate({
-      where: { session: where },
+      where: { session: nonStubWhere },
       _count: { id: true },
     }),
     prisma.toolUse.aggregate({
-      where: { session: where },
+      where: { session: nonStubWhere },
       _count: { id: true },
     }),
     prisma.session.findMany({
-      where: { ...where, gitRepo: { not: null } },
+      where: { ...nonStubWhere, gitRepo: { not: null } },
       select: { gitRepo: true },
       distinct: ['gitRepo'],
     }),
+    // Count actual turns (not the session.turnCount column, which may be stale)
+    prisma.turn.count({
+      where: { session: nonStubWhere },
+    }),
   ]);
 
+  const totalSessions = sessionAgg._count.id;
   const totalInputTokens = sessionAgg._sum.totalInputTokens ?? 0;
   const totalCacheReadTokens = sessionAgg._sum.totalCacheReadTokens ?? 0;
   const cacheEfficiency = totalInputTokens > 0
@@ -136,19 +149,21 @@ export async function getStats(filters: DashboardFilters) {
     : 0;
 
   return {
-    totalSessions: sessionAgg._count.id,
+    totalSessions,
     totalInputTokens,
     totalOutputTokens: sessionAgg._sum.totalOutputTokens ?? 0,
     totalCacheReadTokens,
     totalCacheCreationTokens: sessionAgg._sum.totalCacheCreationTokens ?? 0,
     totalCost: sessionAgg._sum.estimatedCost ?? 0,
     activeMembers: activeMembers.filter(m => m.memberId !== null).length,
-    totalTurns: sessionAgg._sum.turnCount ?? 0,
+    totalTurns: turnAgg,
     totalSubagents: subagentAgg._count.id,
     totalToolUses: toolUseAgg._count.id,
     errorCount: sessionAgg._sum.errorCount ?? 0,
     repoCount: repoCount.length,
-    averageTurnsPerSession: Math.round((sessionAgg._avg.turnCount ?? 0) * 100) / 100,
+    averageTurnsPerSession: totalSessions > 0
+      ? Math.round((turnAgg / totalSessions) * 100) / 100
+      : 0,
     averageCostPerSession: Math.round((sessionAgg._avg.estimatedCost ?? 0) * 10000) / 10000,
     cacheEfficiency: Math.round(cacheEfficiency * 10000) / 10000,
   };
@@ -208,17 +223,17 @@ export async function getMemberStats(filters: DashboardFilters) {
       CAST(COALESCE(SUM(s.total_input_tokens + s.total_output_tokens), 0) AS DOUBLE) as totalTokens,
       CAST(COALESCE(SUM(s.estimated_cost), 0.0) AS DOUBLE) as estimatedCost,
       CAST(COALESCE((
-        SELECT SUM(sa.estimated_cost)
-        FROM subagents sa
-        WHERE sa.session_id IN (
+        SELECT COUNT(*)
+        FROM turns t
+        WHERE t.session_id IN (
           SELECT s2.id FROM sessions s2 WHERE s2.member_id = s.member_id
         )
-      ), 0.0) AS DOUBLE) as subagentCost
+      ), 0) AS DOUBLE) as totalTurns
     FROM sessions s
     ${joinClause}
     ${whereClause}
     GROUP BY s.member_id
-    ORDER BY estimatedCost DESC
+    ORDER BY totalTokens DESC
   `;
 
   const rows = await prisma.$queryRawUnsafe<any[]>(sql, ...params);
@@ -231,7 +246,7 @@ export async function getMemberStats(filters: DashboardFilters) {
     totalOutputTokens: Number(row.totalOutputTokens),
     totalTokens: Number(row.totalTokens),
     estimatedCost: Math.round(Number(row.estimatedCost) * 10000) / 10000,
-    subagentCost: Math.round(Number(row.subagentCost) * 10000) / 10000,
+    totalTurns: Number(row.totalTurns),
   }));
 }
 
@@ -404,9 +419,19 @@ export async function getSessions(filters: DashboardFilters, page = 1, perPage =
   const safePage = Math.max(1, page);
   const safePerPage = Math.min(Math.max(1, perPage), 200);
 
+  // Exclude empty/stub sessions (0 tokens AND no summary)
+  const nonStubWhere = {
+    ...where,
+    NOT: {
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      summary: null,
+    },
+  };
+
   const [data, total] = await Promise.all([
     prisma.session.findMany({
-      where,
+      where: nonStubWhere,
       orderBy: { startedAt: 'desc' },
       skip: (safePage - 1) * safePerPage,
       take: safePerPage,
@@ -419,6 +444,7 @@ export async function getSessions(filters: DashboardFilters, page = 1, perPage =
         model: true,
         startedAt: true,
         endedAt: true,
+        durationMs: true,
         totalInputTokens: true,
         totalOutputTokens: true,
         estimatedCost: true,
@@ -428,19 +454,19 @@ export async function getSessions(filters: DashboardFilters, page = 1, perPage =
         gitRepo: true,
         summary: true,
         turns: {
-          select: { promptText: true },
+          select: { id: true, promptText: true },
           orderBy: { turnNumber: 'asc' as const },
-          take: 1,
         },
       },
     }),
-    prisma.session.count({ where }),
+    prisma.session.count({ where: nonStubWhere }),
   ]);
 
   return {
     data: data.map(s => ({
       ...s,
       firstPrompt: s.turns?.[0]?.promptText ?? null,
+      turnCount: s.turns.length,
       turns: undefined,
       startedAt: s.startedAt?.toISOString() ?? null,
       endedAt: s.endedAt?.toISOString() ?? null,
@@ -518,8 +544,12 @@ export async function getSessionDetail(id: number) {
 
   if (!session) return null;
 
+  // Use actual turns record count instead of metadata turnCount
+  const actualTurnCount = session.turns.length;
+
   return {
     ...session,
+    turnCount: actualTurnCount,
     summary: session.summary,
   };
 }
@@ -634,6 +664,7 @@ export async function getRepoStats(filters: DashboardFilters) {
       CAST(COALESCE(SUM(s.total_input_tokens), 0) AS DOUBLE) as totalInputTokens,
       CAST(COALESCE(SUM(s.total_output_tokens), 0) AS DOUBLE) as totalOutputTokens,
       CAST(COALESCE(SUM(s.total_cache_read_tokens), 0) AS DOUBLE) as totalCacheReadTokens,
+      CAST(COALESCE(SUM(s.estimated_cost), 0) AS DOUBLE) as estimatedCost,
       CAST(COUNT(DISTINCT s.member_id) AS DOUBLE) as memberCount,
       MAX(s.started_at) as lastUsed
     FROM sessions s
@@ -652,6 +683,7 @@ export async function getRepoStats(filters: DashboardFilters) {
     totalInputTokens: Number(row.totalInputTokens),
     totalOutputTokens: Number(row.totalOutputTokens),
     totalCacheReadTokens: Number(row.totalCacheReadTokens),
+    estimatedCost: Number(row.estimatedCost),
     memberCount: Number(row.memberCount),
     lastUsed: row.lastUsed ? new Date(row.lastUsed).toISOString() : null,
   }));
@@ -734,7 +766,40 @@ export async function getRepoDetail(repo: string, filters: DashboardFilters) {
 
   const where = buildSessionWhere(baseFilters);
 
-  const [branchRows, memberRows, dailyRows, recentSessions] = await Promise.all([
+  // Frequent files for this repo
+  const frequentFilesSql = `
+    SELECT
+      fc.file_path as filePath,
+      CAST(COUNT(*) AS DOUBLE) as changeCount,
+      MAX(fc.created_at) as lastChanged
+    FROM file_changes fc
+    INNER JOIN sessions s ON fc.session_id = s.id
+    ${needsMemberJoin ? 'LEFT JOIN members m ON s.member_id = m.id' : ''}
+    ${whereClause}
+    GROUP BY fc.file_path
+    ORDER BY changeCount DESC
+    LIMIT 20
+  `;
+
+  // Sessions per branch (with turn count & file change count)
+  const branchSessionsSql = `
+    SELECT
+      s.id,
+      s.session_uuid as sessionUuid,
+      s.git_branch as gitBranch,
+      m.git_email as gitEmail,
+      m.display_name as displayName,
+      s.started_at as startedAt,
+      s.summary,
+      CAST((SELECT COUNT(*) FROM turns t WHERE t.session_id = s.id) AS DOUBLE) as turnCount,
+      CAST((SELECT COUNT(*) FROM file_changes fc WHERE fc.session_id = s.id) AS DOUBLE) as fileChangeCount
+    FROM sessions s
+    LEFT JOIN members m ON s.member_id = m.id
+    ${whereClause}
+    ORDER BY s.git_branch, s.started_at DESC
+  `;
+
+  const [branchRows, memberRows, dailyRows, recentSessions, frequentFileRows, branchSessionRows] = await Promise.all([
     prisma.$queryRawUnsafe<any[]>(branchSql, ...params),
     prisma.$queryRawUnsafe<any[]>(memberSql, ...memberParams),
     prisma.$queryRawUnsafe<any[]>(dailySql, ...params),
@@ -748,7 +813,26 @@ export async function getRepoDetail(repo: string, filters: DashboardFilters) {
         },
       },
     }),
+    prisma.$queryRawUnsafe<any[]>(frequentFilesSql, ...params),
+    prisma.$queryRawUnsafe<any[]>(branchSessionsSql, ...params),
   ]);
+
+  // Group sessions by branch
+  const sessionsByBranch = new Map<string, any[]>();
+  for (const row of branchSessionRows) {
+    const key = row.gitBranch ?? '';
+    if (!sessionsByBranch.has(key)) sessionsByBranch.set(key, []);
+    sessionsByBranch.get(key)!.push({
+      id: row.id,
+      sessionUuid: row.sessionUuid,
+      gitEmail: row.gitEmail ?? 'unknown',
+      displayName: row.displayName ?? null,
+      startedAt: row.startedAt ? new Date(row.startedAt).toISOString() : null,
+      summary: row.summary ?? null,
+      turnCount: Number(row.turnCount),
+      fileChangeCount: Number(row.fileChangeCount),
+    });
+  }
 
   return {
     dailyStats: dailyRows.map(row => ({
@@ -762,6 +846,7 @@ export async function getRepoDetail(repo: string, filters: DashboardFilters) {
       sessionCount: Number(row.sessionCount),
       totalInputTokens: Number(row.totalInputTokens),
       totalOutputTokens: Number(row.totalOutputTokens),
+      sessions: sessionsByBranch.get(row.gitBranch ?? '') ?? [],
     })),
     members: memberRows.map(row => ({
       gitEmail: row.gitEmail ?? 'unknown',
@@ -770,6 +855,11 @@ export async function getRepoDetail(repo: string, filters: DashboardFilters) {
       totalTokens: Number(row.totalTokens),
     })),
     recentSessions,
+    frequentFiles: frequentFileRows.map(row => ({
+      filePath: row.filePath,
+      changeCount: Number(row.changeCount),
+      lastChanged: row.lastChanged ? new Date(row.lastChanged).toISOString() : null,
+    })),
   };
 }
 
@@ -808,13 +898,23 @@ export async function getMemberDetail(member: string, filters: DashboardFilters)
 
   const where = buildSessionWhere(baseFilters);
 
+  // Exclude empty/stub sessions (0 tokens AND no summary)
+  const nonStubWhere = {
+    ...where,
+    NOT: {
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      summary: null,
+    },
+  };
+
   const [dailyRows, modelRows, recentSessions] = await Promise.all([
     prisma.$queryRawUnsafe<any[]>(dailySql, ...params),
     prisma.$queryRawUnsafe<any[]>(modelSql, ...params),
     prisma.session.findMany({
-      where,
+      where: nonStubWhere,
       orderBy: { startedAt: 'desc' },
-      take: 5,
+      take: 20,
       include: {
         member: {
           select: { gitEmail: true, displayName: true },
@@ -887,6 +987,7 @@ export async function getRepoDateHeatmap(filters: DashboardFilters) {
       DATE(s.started_at) as date,
       CAST(COALESCE(SUM(s.total_input_tokens + s.total_output_tokens), 0) AS DOUBLE) as totalTokens,
       CAST(COUNT(*) AS DOUBLE) as sessionCount,
+      CAST(COALESCE(SUM(s.turn_count), 0) AS DOUBLE) as turnCount,
       CAST(COALESCE(SUM(s.estimated_cost), 0.0) AS DOUBLE) as estimatedCost
     FROM sessions s
     ${joinClause}
@@ -903,6 +1004,7 @@ export async function getRepoDateHeatmap(filters: DashboardFilters) {
     date: row.date,
     totalTokens: Number(row.totalTokens),
     sessionCount: Number(row.sessionCount),
+    turnCount: Number(row.turnCount),
     estimatedCost: Math.round(Number(row.estimatedCost) * 10000) / 10000,
   }));
 }
