@@ -278,8 +278,27 @@ export function MembersPage() {
           />
         </ChartCard>
 
-        {/* Heatmap: Turn / Session count */}
-        <ChartCard title="メンバー × 日付 ターン / セッション数">
+        {/* Heatmap: Session count */}
+        <ChartCard title="メンバー × 日付 セッション数">
+          <MatrixHeatmap
+            data={heatmapData}
+            rowKey="displayName"
+            colKey="date"
+            valueKey="sessionCount"
+            secondaryKey="turnCount"
+            tertiaryKey="totalTokens"
+            color={[34, 197, 94]}
+            unitLabel="sessions"
+            secondaryLabel="turns"
+            tertiaryLabel="tokens"
+            valueFmt={formatNumber}
+            secondaryFmt={formatNumber}
+            tertiaryFmt={formatCompact}
+          />
+        </ChartCard>
+
+        {/* Heatmap: Turn count */}
+        <ChartCard title="メンバー × 日付 ターン数">
           <MatrixHeatmap
             data={heatmapData}
             rowKey="displayName"
@@ -287,7 +306,7 @@ export function MembersPage() {
             valueKey="turnCount"
             secondaryKey="sessionCount"
             tertiaryKey="totalTokens"
-            color={[34, 197, 94]}
+            color={[249, 115, 22]}
             unitLabel="turns"
             secondaryLabel="sessions"
             tertiaryLabel="tokens"

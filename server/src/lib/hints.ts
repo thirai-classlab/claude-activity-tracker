@@ -17,17 +17,7 @@ export function generateHints(
 ): Hint[] {
   const hints: Hint[] = [];
 
-  // Rule 1: High cost alert
-  if (stats.averageCostPerSession > 0.5) {
-    hints.push({
-      type: 'warning',
-      title: 'HIGH COST ALERT',
-      text: `Average cost per session is $${stats.averageCostPerSession.toFixed(2)}. Consider using Sonnet or Haiku for routine tasks to reduce costs.`,
-      link: { label: 'View Token Analysis', href: '/tokens' },
-    });
-  }
-
-  // Rule 2: Low cache efficiency
+  // Rule 1: Low cache efficiency
   if (stats.cacheEfficiency < 0.3 && stats.totalSessions > 10) {
     hints.push({
       type: 'info',

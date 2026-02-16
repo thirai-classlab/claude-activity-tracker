@@ -764,7 +764,7 @@ export async function getRepoDetail(repo: string, filters: DashboardFilters) {
     SELECT
       DATE(s.started_at) as date,
       CAST(COUNT(*) AS DOUBLE) as sessionCount,
-      CAST(COALESCE(SUM(s.turn_count), 0) AS DOUBLE) as turnCount,
+      CAST(COALESCE(SUM((SELECT COUNT(*) FROM turns t WHERE t.session_id = s.id)), 0) AS DOUBLE) as turnCount,
       CAST(COALESCE(SUM(s.total_input_tokens + s.total_output_tokens), 0) AS DOUBLE) as totalTokens
     FROM sessions s
     ${joinClause}
@@ -996,7 +996,7 @@ export async function getRepoDateHeatmap(filters: DashboardFilters) {
       DATE(s.started_at) as date,
       CAST(COALESCE(SUM(s.total_input_tokens + s.total_output_tokens), 0) AS DOUBLE) as totalTokens,
       CAST(COUNT(*) AS DOUBLE) as sessionCount,
-      CAST(COALESCE(SUM(s.turn_count), 0) AS DOUBLE) as turnCount,
+      CAST(COALESCE(SUM((SELECT COUNT(*) FROM turns t WHERE t.session_id = s.id)), 0) AS DOUBLE) as turnCount,
       CAST(COALESCE(SUM(s.estimated_cost), 0.0) AS DOUBLE) as estimatedCost
     FROM sessions s
     ${joinClause}
@@ -1030,7 +1030,7 @@ export async function getMemberDateHeatmap(filters: DashboardFilters) {
       DATE(s.started_at) as date,
       CAST(COALESCE(SUM(s.total_input_tokens + s.total_output_tokens), 0) AS DOUBLE) as totalTokens,
       CAST(COUNT(*) AS DOUBLE) as sessionCount,
-      CAST(COALESCE(SUM(s.turn_count), 0) AS DOUBLE) as turnCount
+      CAST(COALESCE(SUM((SELECT COUNT(*) FROM turns t WHERE t.session_id = s.id)), 0) AS DOUBLE) as turnCount
     FROM sessions s
     LEFT JOIN members m ON s.member_id = m.id
     ${whereClause}
@@ -1060,13 +1060,13 @@ export async function getProductivityMetrics(filters: DashboardFilters) {
       m.display_name as displayName,
       m.git_email as gitEmail,
       CAST(COUNT(*) AS DOUBLE) as sessionCount,
-      CAST(COALESCE(SUM(s.turn_count), 0) AS DOUBLE) as totalTurns,
+      CAST(COALESCE(SUM((SELECT COUNT(*) FROM turns t WHERE t.session_id = s.id)), 0) AS DOUBLE) as totalTurns,
       CAST(COALESCE(SUM(s.tool_use_count), 0) AS DOUBLE) as totalToolUses,
       CAST(COALESCE(SUM(s.subagent_count), 0) AS DOUBLE) as totalSubagents,
       CAST(COALESCE(SUM(s.error_count), 0) AS DOUBLE) as totalErrors,
       CAST(COALESCE(SUM(s.total_input_tokens + s.total_output_tokens), 0) AS DOUBLE) as totalTokens,
       CAST(COALESCE(SUM(s.estimated_cost), 0.0) AS DOUBLE) as totalCost,
-      CAST(COALESCE(AVG(s.turn_count), 0) AS DOUBLE) as avgTurns,
+      CAST(COALESCE(AVG((SELECT COUNT(*) FROM turns t WHERE t.session_id = s.id)), 0) AS DOUBLE) as avgTurns,
       CAST(COALESCE(AVG(s.tool_use_count), 0) AS DOUBLE) as avgToolUses
     FROM sessions s
     LEFT JOIN members m ON s.member_id = m.id
