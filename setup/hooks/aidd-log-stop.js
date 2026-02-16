@@ -111,6 +111,8 @@ const debug = createDebugger(hookDir, config, 'Stop');
       cacheCreationTokens: rt.cacheCreationTokens,
       cacheReadTokens: rt.cacheReadTokens,
       responseCompletedAt: rt.responseCompletedAt || null,
+      promptText: rt.promptText || '',
+      turnIndex: rt.turnIndex ?? null,
     })),
   };
 

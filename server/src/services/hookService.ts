@@ -329,7 +329,7 @@ export async function handleStop(data: {
     event_data?: Record<string, unknown>;
   }>;
   turn_durations?: Array<{ durationMs: number }>;
-  response_texts?: Array<{ text: string; model?: string; stopReason?: string; inputTokens?: number; outputTokens?: number; cacheCreationTokens?: number; cacheReadTokens?: number; responseCompletedAt?: string | null }>;
+  response_texts?: Array<{ text: string; model?: string; stopReason?: string; inputTokens?: number; outputTokens?: number; cacheCreationTokens?: number; cacheReadTokens?: number; responseCompletedAt?: string | null; promptText?: string; turnIndex?: number | null }>;
 }): Promise<void> {
   // Find or create session
   const sessionId = await findOrCreateSession(data.session_uuid);
@@ -386,25 +386,59 @@ export async function handleStop(data: {
     },
   });
 
+  // Build turn matching map: transcript turnIndex -> DB turnId
+  // Uses promptText as the matching key (set by prompt hook, compared to transcript)
+  const dbTurns = await prisma.turn.findMany({
+    where: { sessionId },
+    orderBy: { turnNumber: 'asc' },
+    select: { id: true, promptText: true, turnNumber: true },
+  });
+
+  // Normalize prompt text for comparison:
+  // - replace newlines with spaces
+  // - remove trailing "..." (added by prompt hook for truncation)
+  // - trim and take first 150 chars
+  function normalizePromptKey(text: string): string {
+    return text.replace(/\n/g, ' ').replace(/\.\.\.$/,  '').trim().substring(0, 150);
+  }
+
+  // Build turnIndex -> DB turnId map using response_texts promptText
+  const turnIndexToDbId = new Map<number, number>();
+  if (data.response_texts?.length) {
+    // Create a pool of unmatched DB turns (in order)
+    const unmatchedDbTurns = [...dbTurns];
+    for (const rt of data.response_texts) {
+      if (rt.turnIndex == null || !rt.promptText) continue;
+      const promptKey = normalizePromptKey(rt.promptText);
+      if (!promptKey) continue;
+      // Find matching DB turn by normalized promptText
+      const matchIdx = unmatchedDbTurns.findIndex(t => {
+        if (!t.promptText) return false;
+        return normalizePromptKey(t.promptText) === promptKey;
+      });
+      if (matchIdx >= 0) {
+        turnIndexToDbId.set(rt.turnIndex, unmatchedDbTurns[matchIdx].id);
+        unmatchedDbTurns.splice(matchIdx, 1); // Remove to prevent double-matching
+      }
+    }
+  }
+
+  // Helper: resolve turnIndex to DB turnId
+  function resolveTurnId(turnIndex: number | null | undefined): number | null {
+    if (turnIndex == null) return null;
+    return turnIndexToDbId.get(turnIndex) ?? null;
+  }
+
   // Create tool_use records (main agent's tool uses, subagentId = null)
   // Delete existing records first to prevent duplicates on re-runs
   if (data.tool_uses?.length) {
     await prisma.toolUse.deleteMany({ where: { sessionId, subagentId: null } });
-    const turns = await prisma.turn.findMany({
-      where: { sessionId },
-      orderBy: { turnNumber: 'asc' },
-      select: { id: true },
-    });
-    // Compute offset: align transcript turn indices to DB turns from the end
-    const maxTuIdx = Math.max(...data.tool_uses.map(t => t.turn_index ?? -1));
-    const tuOffset = maxTuIdx >= 0 ? turns.length - maxTuIdx - 1 : 0;
     await prisma.toolUse.createMany({
       data: data.tool_uses.map((t) => {
         const name = t.tool_name || '';
-        const alignedIdx = t.turn_index != null ? t.turn_index + tuOffset : -1;
         return {
           sessionId,
-          turnId: (alignedIdx >= 0 && alignedIdx < turns.length) ? turns[alignedIdx].id : null,
+          turnId: resolveTurnId(t.turn_index),
           toolUseUuid: t.tool_use_uuid || '',
           toolName: name,
           toolCategory: t.tool_category || null,
@@ -424,26 +458,16 @@ export async function handleStop(data: {
   // Delete existing and recreate to prevent duplicates on re-runs
   if (data.file_changes?.length) {
     await prisma.fileChange.deleteMany({ where: { sessionId, toolUseId: null } });
-    const turns = await prisma.turn.findMany({
-      where: { sessionId },
-      orderBy: { turnNumber: 'asc' },
-      select: { id: true },
-    });
     // Filter out snapshot operations (file-history-snapshot)
     const realChanges = data.file_changes.filter(f => f.operation !== 'snapshot');
     if (realChanges.length) {
-      const maxFcIdx = Math.max(...realChanges.map(f => f.turn_index ?? -1));
-      const fcOffset = maxFcIdx >= 0 ? turns.length - maxFcIdx - 1 : 0;
       await prisma.fileChange.createMany({
-        data: realChanges.map((f) => {
-          const alignedIdx = f.turn_index != null ? f.turn_index + fcOffset : -1;
-          return {
-            sessionId,
-            filePath: f.file_path,
-            operation: f.operation,
-            turnId: (alignedIdx >= 0 && alignedIdx < turns.length) ? turns[alignedIdx].id : null,
-          };
-        }),
+        data: realChanges.map((f) => ({
+          sessionId,
+          filePath: f.file_path,
+          operation: f.operation,
+          turnId: resolveTurnId(f.turn_index),
+        })),
       });
     }
   }
@@ -463,67 +487,49 @@ export async function handleStop(data: {
     }
   }
 
-  // Update turn durations and response texts if provided
-  // IMPORTANT: Align from the END of the turns array, because transcript
-  // compaction removes early turns — response_texts only has recent turns.
-  if (data.turn_durations?.length || data.response_texts?.length) {
-    const turns = await prisma.turn.findMany({
+  // Update response texts using key-based matching (promptText -> DB turn)
+  if (data.response_texts?.length) {
+    const now = new Date();
+    // Fetch full turn data for duration computation
+    const fullDbTurns = await prisma.turn.findMany({
       where: { sessionId },
       orderBy: { turnNumber: 'asc' },
     });
+    const fullTurnMap = new Map(fullDbTurns.map(t => [t.id, t]));
 
-    const now = new Date();
+    for (let i = 0; i < data.response_texts.length; i++) {
+      const rt = data.response_texts[i];
+      const dbTurnId = resolveTurnId(rt.turnIndex);
+      if (!dbTurnId) continue;
 
-    // Map turn_durations from end
-    if (data.turn_durations?.length) {
-      const durOffset = turns.length - data.turn_durations.length;
-      for (let i = 0; i < data.turn_durations.length; i++) {
-        const turnIdx = durOffset + i;
-        if (turnIdx >= 0 && turnIdx < turns.length) {
-          await prisma.turn.update({
-            where: { id: turns[turnIdx].id },
-            data: { durationMs: data.turn_durations[i].durationMs },
-          });
-        }
+      const turn = fullTurnMap.get(dbTurnId);
+      if (!turn) continue;
+
+      const isLatestTurn = (i === data.response_texts.length - 1);
+      // Latest turn: use hook fire time (now). Earlier: use transcript timestamp.
+      const responseTime = isLatestTurn ? now : (rt.responseCompletedAt ? new Date(rt.responseCompletedAt) : null);
+
+      // Compute durationMs = responseTime - promptSubmittedAt
+      let computedDurationMs: number | undefined;
+      if (responseTime && turn.promptSubmittedAt) {
+        const diff = responseTime.getTime() - turn.promptSubmittedAt.getTime();
+        if (diff > 0) computedDurationMs = diff;
       }
-    }
 
-    // Map response_texts from end (transcript may be compacted)
-    if (data.response_texts?.length) {
-      const rtOffset = turns.length - data.response_texts.length;
-      for (let i = 0; i < data.response_texts.length; i++) {
-        const turnIdx = rtOffset + i;
-        if (turnIdx < 0 || turnIdx >= turns.length) continue;
-
-        const rt = data.response_texts[i];
-        const turn = turns[turnIdx];
-        const isLatestTurn = (i === data.response_texts.length - 1);
-
-        // Latest turn: use hook fire time (now). Earlier: use transcript timestamp.
-        const responseTime = isLatestTurn ? now : (rt.responseCompletedAt ? new Date(rt.responseCompletedAt) : null);
-
-        // Compute durationMs = responseTime - promptSubmittedAt
-        let computedDurationMs: number | undefined;
-        if (responseTime && turn.promptSubmittedAt) {
-          const diff = responseTime.getTime() - turn.promptSubmittedAt.getTime();
-          if (diff > 0) computedDurationMs = diff;
-        }
-
-        await prisma.turn.update({
-          where: { id: turn.id },
-          data: {
-            responseText: rt.text?.substring(0, 65000) || null,
-            ...(responseTime ? { responseCompletedAt: responseTime } : {}),
-            ...(computedDurationMs != null ? { durationMs: computedDurationMs } : {}),
-            ...(rt.model ? { model: rt.model } : {}),
-            ...(rt.stopReason ? { stopReason: rt.stopReason } : {}),
-            ...(rt.inputTokens != null ? { inputTokens: rt.inputTokens } : {}),
-            ...(rt.outputTokens != null ? { outputTokens: rt.outputTokens } : {}),
-            ...(rt.cacheCreationTokens != null ? { cacheCreationTokens: rt.cacheCreationTokens } : {}),
-            ...(rt.cacheReadTokens != null ? { cacheReadTokens: rt.cacheReadTokens } : {}),
-          },
-        });
-      }
+      await prisma.turn.update({
+        where: { id: dbTurnId },
+        data: {
+          responseText: rt.text?.substring(0, 65000) || null,
+          ...(responseTime ? { responseCompletedAt: responseTime } : {}),
+          ...(computedDurationMs != null ? { durationMs: computedDurationMs } : {}),
+          ...(rt.model ? { model: rt.model } : {}),
+          ...(rt.stopReason ? { stopReason: rt.stopReason } : {}),
+          ...(rt.inputTokens != null ? { inputTokens: rt.inputTokens } : {}),
+          ...(rt.outputTokens != null ? { outputTokens: rt.outputTokens } : {}),
+          ...(rt.cacheCreationTokens != null ? { cacheCreationTokens: rt.cacheCreationTokens } : {}),
+          ...(rt.cacheReadTokens != null ? { cacheReadTokens: rt.cacheReadTokens } : {}),
+        },
+      });
     }
   }
 }

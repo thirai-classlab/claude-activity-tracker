@@ -428,6 +428,7 @@ function parseTranscript(transcriptPath) {
   let curTurnCacheCreation = 0;
   let curTurnCacheRead = 0;
   let curTurnLastAssistantTimestamp = null;
+  let curTurnPromptText = '';
 
   function finalizeTurn() {
     if (!turnStarted) return;
@@ -440,6 +441,8 @@ function parseTranscript(transcriptPath) {
       cacheCreationTokens: curTurnCacheCreation,
       cacheReadTokens: curTurnCacheRead,
       responseCompletedAt: curTurnLastAssistantTimestamp,
+      promptText: curTurnPromptText,
+      turnIndex: curTurnIndex,
     });
   }
 
@@ -452,6 +455,7 @@ function parseTranscript(transcriptPath) {
     curTurnCacheCreation = 0;
     curTurnCacheRead = 0;
     curTurnLastAssistantTimestamp = null;
+    curTurnPromptText = '';
     turnStarted = true;
   }
 
@@ -559,16 +563,23 @@ function parseTranscript(transcriptPath) {
         curTurnIndex++;
         result.turnCount++;
 
-        // Extract first prompt text (for subagent task name)
-        if (result.firstPrompt === '') {
-          if (typeof content === 'string') {
-            result.firstPrompt = content.substring(0, 500);
-          } else if (Array.isArray(content)) {
-            const textBlocks = content.filter(b => b.type === 'text');
-            if (textBlocks.length > 0) {
-              result.firstPrompt = textBlocks.map(b => b.text).join('\n').substring(0, 500);
-            }
+        // Extract prompt text for this turn (used as matching key)
+        // Normalize: filter system-reminders, replace newlines, truncate
+        // to match the format from the prompt hook (aidd-log-prompt.js)
+        if (typeof content === 'string') {
+          curTurnPromptText = content.replace(/\n/g, ' ').substring(0, 500);
+        } else if (Array.isArray(content)) {
+          const textBlocks = content.filter(b =>
+            b.type === 'text' && b.text && !b.text.trimStart().startsWith('<system-reminder>')
+          );
+          if (textBlocks.length > 0) {
+            curTurnPromptText = textBlocks.map(b => b.text).join(' ').replace(/\n/g, ' ').substring(0, 500);
           }
+        }
+
+        // Extract first prompt text (for session summary fallback)
+        if (result.firstPrompt === '') {
+          result.firstPrompt = curTurnPromptText;
         }
       }
     }
