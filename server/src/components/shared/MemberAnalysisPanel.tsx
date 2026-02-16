@@ -130,7 +130,7 @@ export function MemberAnalysisPanel({ email, displayName }: MemberAnalysisPanelP
     const socket = io({
       path: '/socket.io',
       auth: { apiKey },
-      transports: ['websocket'],
+      transports: ['polling', 'websocket'],
     });
     socketRef.current = socket;
 
@@ -202,7 +202,7 @@ export function MemberAnalysisPanel({ email, displayName }: MemberAnalysisPanelP
     const socket = io({
       path: '/socket.io',
       auth: { apiKey },
-      transports: ['websocket'],
+      transports: ['polling', 'websocket'],
     });
     socketRef.current = socket;
 

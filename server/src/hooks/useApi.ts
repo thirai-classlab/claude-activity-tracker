@@ -132,10 +132,10 @@ export function useFilterOptions() {
   });
 }
 
-export function usePromptFeed(filters?: DashboardFilters, limit?: number, before?: string) {
+export function usePromptFeed(filters?: DashboardFilters, limit?: number, before?: string, hours?: number) {
   return useQuery({
-    queryKey: qk('prompt-feed', filters, { limit, before }),
-    queryFn: () => api.getPromptFeed(filters, limit, before),
+    queryKey: qk('prompt-feed', filters, { limit, before, hours }),
+    queryFn: () => api.getPromptFeed(filters, limit, before, hours),
   });
 }
 

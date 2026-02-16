@@ -121,8 +121,8 @@ export const api = {
   getFilterOptions: () =>
     fetchApi<FilterOptionsResponse>('/filters'),
 
-  getPromptFeed: (filters?: DashboardFilters, limit?: number, before?: string) =>
-    fetchApi<PromptFeedResponse>('/prompt-feed', filters, { limit, before }),
+  getPromptFeed: (filters?: DashboardFilters, limit?: number, before?: string, hours?: number) =>
+    fetchApi<PromptFeedResponse>('/prompt-feed', filters, { limit, before, hours }),
 
   getAnalysisLogs: (email: string, limit?: number) =>
     fetchApi<AnalysisLogsResponse>('/analysis-logs', undefined, { email, limit }),

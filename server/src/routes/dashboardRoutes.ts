@@ -248,7 +248,8 @@ dashboardRoutes.get('/prompt-feed', async (req: Request, res: Response) => {
   try {
     const limit = parseInt(req.query.limit as string, 10) || 50;
     const before = req.query.before as string | undefined;
-    const data = await dashboardService.getPromptFeed(getFilters(req.query), limit, before);
+    const hours = parseInt(req.query.hours as string, 10) || undefined;
+    const data = await dashboardService.getPromptFeed(getFilters(req.query), limit, before, hours);
     res.json(data);
   } catch (error) {
     console.error('prompt-feed error:', error);

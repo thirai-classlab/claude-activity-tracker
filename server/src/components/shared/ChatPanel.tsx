@@ -71,7 +71,7 @@ export function ChatPanel({ context, initialMessage, placeholder, height = '500p
     const socket = io({
       path: '/socket.io',
       auth: { apiKey },
-      transports: ['websocket'],
+      transports: ['polling', 'websocket'],
     });
     socketRef.current = socket;
 

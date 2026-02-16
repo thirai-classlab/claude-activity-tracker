@@ -1106,14 +1106,24 @@ export async function getProductivityMetrics(filters: DashboardFilters) {
 export async function getPromptFeed(
   filters: DashboardFilters,
   limit = 50,
-  before?: string
+  before?: string,
+  hours?: number
 ) {
-  const safeLimit = Math.min(Math.max(1, limit), 200);
+  const safeLimit = Math.min(Math.max(1, limit), 500);
 
   const turnWhere: any = {
     promptText: { not: null },
     promptSubmittedAt: { not: null },
   };
+
+  // hours filter: override from/to with recent N hours
+  if (hours && hours > 0) {
+    const since = new Date(Date.now() - hours * 60 * 60 * 1000);
+    turnWhere.promptSubmittedAt = {
+      ...turnWhere.promptSubmittedAt,
+      gte: since,
+    };
+  }
 
   if (before) {
     turnWhere.promptSubmittedAt = {
