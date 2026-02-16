@@ -414,6 +414,9 @@ function parseTranscript(transcriptPath) {
   // Track tool_use blocks by ID for matching with tool_result
   const toolUseMap = new Map();
 
+  // Current turn index (0-based, incremented on each 'user' entry)
+  let curTurnIndex = -1;
+
   // Per-turn response tracking
   let turnStarted = false;
   let curTurnTexts = [];
@@ -427,7 +430,7 @@ function parseTranscript(transcriptPath) {
   function finalizeTurn() {
     if (!turnStarted) return;
     result.responseTexts.push({
-      text: curTurnTexts.join('\n').substring(0, 5000),
+      text: curTurnTexts.join('\n').substring(0, 65000),
       model: curTurnModel,
       stopReason: curTurnStopReason,
       inputTokens: curTurnInputTokens,
@@ -497,6 +500,7 @@ function parseTranscript(transcriptPath) {
               status: 'success',
               errorMessage: '',
             };
+            toolEntry.turnIndex = curTurnIndex;
             result.toolUses.push(toolEntry);
             if (block.id) toolUseMap.set(block.id, toolEntry);
 
@@ -507,6 +511,7 @@ function parseTranscript(transcriptPath) {
                 result.fileChanges.push({
                   filePath,
                   operation: block.name.toLowerCase(),
+                  turnIndex: curTurnIndex,
                 });
               }
             }
@@ -517,29 +522,35 @@ function parseTranscript(transcriptPath) {
 
     // --- user entries ---
     if (type === 'user') {
-      // Finalize previous turn before starting a new one
-      finalizeTurn();
-      resetTurn();
-
-      result.turnCount++;
-
-      // Check tool_result blocks for errors
       const content = obj.message?.content;
-      if (Array.isArray(content)) {
+
+      // Determine if this is a tool_result-only message (not a real user prompt)
+      const isToolResultOnly = Array.isArray(content) &&
+        content.length > 0 &&
+        content.every(block => block.type === 'tool_result');
+
+      if (isToolResultOnly) {
+        // tool_result messages are part of the same turn — don't split
+        // Just check for errors
         for (const block of content) {
-          if (block.type === 'tool_result') {
-            if (block.is_error) {
-              result.errorCount++;
-              const entry = toolUseMap.get(block.tool_use_id);
-              if (entry) {
-                entry.status = 'error';
-                entry.errorMessage = typeof block.content === 'string'
-                  ? block.content.substring(0, 300)
-                  : '';
-              }
+          if (block.type === 'tool_result' && block.is_error) {
+            result.errorCount++;
+            const entry = toolUseMap.get(block.tool_use_id);
+            if (entry) {
+              entry.status = 'error';
+              entry.errorMessage = typeof block.content === 'string'
+                ? block.content.substring(0, 300)
+                : '';
             }
           }
         }
+      } else {
+        // Real user prompt — start a new turn
+        finalizeTurn();
+        resetTurn();
+
+        curTurnIndex++;
+        result.turnCount++;
       }
     }
 

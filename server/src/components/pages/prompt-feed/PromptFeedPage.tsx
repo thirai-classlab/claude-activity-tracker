@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { Activity, Pause, Play, Users, MessageSquare, Clock } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { ModelBadge } from '@/components/shared/ModelBadge';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
@@ -15,11 +16,12 @@ import type { PromptFeedItem } from '@/lib/types';
 
 const HOUR_OPTIONS = [4, 8, 12, 24] as const;
 const REFRESH_INTERVAL = 15_000;
-const ROW_HEIGHT = 28;
-const HEADER_HEIGHT = 22;
-const GROUP_GAP = 8;
-const TIMELINE_LEFT_WIDTH = 260;
-const HOUR_MARK_WIDTH = 120; // minimum px per hour
+const ROW_HEIGHT = 32;
+const HEADER_HEIGHT = 28;
+const USER_HEADER_HEIGHT = 24;
+const GROUP_GAP = 2;
+const TIMELINE_LEFT_WIDTH = 280;
+const HOUR_MARK_WIDTH = 120;
 
 // ─── Color palette for users ────────────────────────────────────────────────
 
@@ -38,6 +40,7 @@ interface TimelineGroup {
   userEmail: string;
   userName: string;
   userColor: string;
+  promptCount: number;
   repos: {
     repoName: string;
     branches: {
@@ -67,6 +70,14 @@ export function PromptFeedPage() {
     return () => clearInterval(interval);
   }, [paused, feed.refetch]);
 
+  // Scroll to right (now) on load
+  useEffect(() => {
+    if (scrollRef.current && feed.data?.data?.length) {
+      const el = scrollRef.current;
+      el.scrollLeft = el.scrollWidth - el.clientWidth;
+    }
+  }, [feed.data]);
+
   // Time range
   const { timeStart, timeEnd, totalMs } = useMemo(() => {
     const end = new Date();
@@ -92,7 +103,6 @@ export function PromptFeedPage() {
     return userEmails.map((email, userIdx) => {
       const { name, items: userItems } = userMap.get(email)!;
 
-      // Group by repo
       const repoMap = new Map<string, PromptFeedItem[]>();
       for (const item of userItems) {
         const repo = item.session.gitRepo || '(no repo)';
@@ -101,7 +111,6 @@ export function PromptFeedPage() {
       }
 
       const repos = Array.from(repoMap.entries()).map(([repoName, repoItems]) => {
-        // Group by branch
         const branchMap = new Map<string, PromptFeedItem[]>();
         for (const item of repoItems) {
           const branch = item.session.gitBranch || '(no branch)';
@@ -110,7 +119,6 @@ export function PromptFeedPage() {
         }
 
         const branches = Array.from(branchMap.entries()).map(([branchName, branchItems]) => {
-          // Group by session
           const sessionMap = new Map<number, PromptFeedItem[]>();
           for (const item of branchItems) {
             const sid = item.session.id;
@@ -135,31 +143,21 @@ export function PromptFeedPage() {
         userEmail: email,
         userName: name,
         userColor: getUserColor(userIdx),
+        promptCount: userItems.length,
         repos,
       };
     });
   }, [feed.data]);
 
-  // Calculate total rows for height
-  const { totalRows, rowMeta } = useMemo(() => {
-    const meta: { type: 'user' | 'repo' | 'session'; label: string; color: string; depth: number; sessionId?: number }[] = [];
-    for (const group of groups) {
-      for (const repo of group.repos) {
-        for (const branch of repo.branches) {
-          for (const session of branch.sessions) {
-            meta.push({
-              type: 'session',
-              label: `#${session.sessionId}`,
-              color: group.userColor,
-              depth: 0,
-              sessionId: session.sessionId,
-            });
-          }
-        }
-      }
-    }
-    return { totalRows: meta.length, rowMeta: meta };
-  }, [groups]);
+  // Summary stats
+  const stats = useMemo(() => {
+    if (!feed.data?.data) return { total: 0, users: 0, sessions: 0, rate: '0' };
+    const items = feed.data.data;
+    const uniqueUsers = new Set(items.map(i => i.member?.gitEmail)).size;
+    const uniqueSessions = new Set(items.map(i => i.session.id)).size;
+    const rate = hours > 0 ? (items.length / hours).toFixed(1) : '0';
+    return { total: items.length, users: uniqueUsers, sessions: uniqueSessions, rate };
+  }, [feed.data, hours]);
 
   // Position calculation
   const getX = useCallback((dateStr: string) => {
@@ -207,6 +205,15 @@ export function PromptFeedPage() {
 
   const handleDotLeave = () => setTooltip(null);
 
+  // Dot size based on token count
+  const getDotSize = useCallback((item: PromptFeedItem) => {
+    const tokens = item.inputTokens + item.outputTokens;
+    if (tokens > 50000) return 12;
+    if (tokens > 10000) return 10;
+    if (tokens > 1000) return 8;
+    return 6;
+  }, []);
+
   if (feed.isLoading) return <LoadingSpinner />;
   if (feed.error) return <ErrorDisplay retry={() => feed.refetch()} />;
 
@@ -219,71 +226,97 @@ export function PromptFeedPage() {
       />
       <div className="page-body">
         {/* Controls */}
-        <div className="timeline-controls">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span className="timeline-live-dot" style={{
-              animation: paused ? 'none' : 'pulse 2s infinite',
-              background: paused ? 'var(--text-muted)' : '#22c55e',
-            }} />
-            <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-              {paused ? '一時停止中' : 'ライブ更新中'}
-            </span>
-            <button className="btn btn-ghost" onClick={() => setPaused(!paused)} style={{ fontSize: '12px' }}>
-              {paused ? '▶ 再開' : '⏸ 停止'}
+        <div className="tl-controls">
+          <div className="tl-controls-left">
+            <button
+              className={`tl-live-btn ${paused ? 'tl-live-btn--paused' : ''}`}
+              onClick={() => setPaused(!paused)}
+            >
+              {paused
+                ? <><Play size={12} /> 再開</>
+                : <><span className="tl-live-pulse" /> ライブ</>
+              }
             </button>
+            {feed.isFetching && !feed.isLoading && (
+              <span className="tl-fetching">更新中...</span>
+            )}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginRight: '4px' }}>表示期間:</span>
-            {HOUR_OPTIONS.map(h => (
-              <button
-                key={h}
-                className={`btn btn-sm ${hours === h ? 'btn-primary' : 'btn-ghost'}`}
-                onClick={() => setHours(h)}
-                style={{ fontSize: '12px', padding: '3px 10px' }}
-              >
-                {h}h
-              </button>
-            ))}
+          <div className="tl-controls-right">
+            <span className="tl-period-label">期間</span>
+            <div className="tl-period-tabs">
+              {HOUR_OPTIONS.map(h => (
+                <button
+                  key={h}
+                  className={`tl-period-tab ${hours === h ? 'tl-period-tab--active' : ''}`}
+                  onClick={() => setHours(h)}
+                >
+                  {h}h
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Stats bar */}
+        <div className="tl-stats">
+          <div className="tl-stat">
+            <MessageSquare size={14} />
+            <span className="tl-stat-value">{stats.total}</span>
+            <span className="tl-stat-label">プロンプト</span>
+          </div>
+          <div className="tl-stat">
+            <Users size={14} />
+            <span className="tl-stat-value">{stats.users}</span>
+            <span className="tl-stat-label">アクティブ</span>
+          </div>
+          <div className="tl-stat">
+            <Activity size={14} />
+            <span className="tl-stat-value">{stats.sessions}</span>
+            <span className="tl-stat-label">セッション</span>
+          </div>
+          <div className="tl-stat">
+            <Clock size={14} />
+            <span className="tl-stat-value">{stats.rate}</span>
+            <span className="tl-stat-label">件/時</span>
           </div>
         </div>
 
         {(!feed.data || feed.data.data.length === 0) ? (
           <NoData message={`過去${hours}時間にプロンプトが見つかりません。`} />
         ) : (
-          <div className="timeline-container" ref={scrollRef}>
+          <div className="tl-container">
             {/* Left labels */}
-            <div className="timeline-labels" style={{ width: TIMELINE_LEFT_WIDTH }}>
+            <div className="tl-labels" style={{ width: TIMELINE_LEFT_WIDTH }}>
               {/* Header spacer */}
-              <div style={{ height: HEADER_HEIGHT + 1, borderBottom: '1px solid var(--border)' }} />
+              <div className="tl-labels-header" style={{ height: HEADER_HEIGHT }} />
 
               {groups.map((group, gi) => (
-                <div key={group.userEmail} className="timeline-group" style={{ marginTop: gi > 0 ? GROUP_GAP : 0 }}>
+                <div key={group.userEmail} className="tl-group">
+                  {/* User header row */}
+                  <div className="tl-user-header" style={{ height: USER_HEADER_HEIGHT }}>
+                    <span className="tl-user-dot" style={{ background: group.userColor }} />
+                    <span className="tl-user-name" title={group.userEmail}>
+                      {group.userName}
+                    </span>
+                    <span className="tl-user-count">{group.promptCount}</span>
+                  </div>
+
+                  {/* Session rows */}
                   {group.repos.map((repo) => (
                     repo.branches.map((branch) => (
-                      branch.sessions.map((session, si) => (
-                        <div key={session.sessionId} className="timeline-label-row" style={{ height: ROW_HEIGHT }}>
-                          {si === 0 ? (
-                            <div className="timeline-label-content">
-                              <span className="timeline-user-dot" style={{ background: group.userColor }} />
-                              <span className="timeline-user-name" title={group.userEmail}>
-                                {group.userName}
-                              </span>
-                              <span className="timeline-separator">/</span>
-                              <span className="timeline-repo" title={repo.repoName}>
-                                {shortRepo(repo.repoName)}
-                              </span>
-                              <span className="timeline-separator">/</span>
-                              <span className="timeline-branch" title={branch.branchName}>
-                                {truncate(branch.branchName, 15)}
-                              </span>
-                            </div>
-                          ) : (
-                            <div className="timeline-label-content" style={{ paddingLeft: '14px' }}>
-                              <span className="timeline-session-label">
-                                Session #{session.sessionId}
-                              </span>
-                            </div>
-                          )}
+                      branch.sessions.map((session) => (
+                        <div key={session.sessionId} className="tl-label-row" style={{ height: ROW_HEIGHT }}>
+                          <div className="tl-label-content">
+                            <span className="tl-label-indent" style={{ borderColor: `${group.userColor}40` }} />
+                            <span className="tl-repo" title={repo.repoName}>
+                              {shortRepo(repo.repoName)}
+                            </span>
+                            <span className="tl-separator">/</span>
+                            <span className="tl-branch" title={branch.branchName}>
+                              {truncate(branch.branchName, 12)}
+                            </span>
+                            <span className="tl-session-id">#{session.sessionId}</span>
+                          </div>
                         </div>
                       ))
                     ))
@@ -293,103 +326,126 @@ export function PromptFeedPage() {
             </div>
 
             {/* Scrollable timeline area */}
-            <div className="timeline-scroll">
-              <div className="timeline-canvas" style={{ width: timelineWidth }}>
+            <div className="tl-scroll" ref={scrollRef}>
+              <div className="tl-canvas" style={{ width: timelineWidth }}>
                 {/* Time axis header */}
-                <div className="timeline-axis" style={{ height: HEADER_HEIGHT }}>
+                <div className="tl-axis" style={{ height: HEADER_HEIGHT }}>
                   {hourMarks.map(mark => (
                     <div
                       key={mark.label}
-                      className="timeline-hour-mark"
+                      className="tl-hour-mark"
                       style={{ left: `${mark.ratio * 100}%` }}
                     >
                       <span>{mark.label}</span>
                     </div>
                   ))}
-                  {/* "Now" marker */}
-                  <div className="timeline-now-marker" style={{ left: '100%' }}>
-                    <span>now</span>
-                  </div>
                 </div>
 
                 {/* Grid lines + dots */}
-                <div className="timeline-body">
+                <div className="tl-body">
                   {/* Vertical grid lines */}
                   {hourMarks.map(mark => (
                     <div
                       key={`grid-${mark.label}`}
-                      className="timeline-grid-line"
+                      className="tl-grid-line"
                       style={{ left: `${mark.ratio * 100}%` }}
                     />
                   ))}
 
-                  {/* Rows */}
-                  {(() => {
-                    let rowIndex = 0;
-                    return groups.map((group, gi) => (
-                      <div key={group.userEmail} style={{ marginTop: gi > 0 ? GROUP_GAP : 0 }}>
-                        {group.repos.map((repo) => (
-                          repo.branches.map((branch) => (
-                            branch.sessions.map((session) => {
-                              const currentRow = rowIndex++;
-                              return (
-                                <div
-                                  key={session.sessionId}
-                                  className="timeline-row"
-                                  style={{ height: ROW_HEIGHT }}
-                                >
-                                  {/* Session span bar */}
-                                  {(() => {
-                                    const times = session.items
-                                      .map(it => new Date(it.promptSubmittedAt!).getTime())
-                                      .filter(t => t >= timeStart.getTime());
-                                    if (times.length === 0) return null;
-                                    const minT = Math.min(...times);
-                                    const maxT = Math.max(...times);
-                                    const left = (minT - timeStart.getTime()) / totalMs;
-                                    const right = (maxT - timeStart.getTime()) / totalMs;
-                                    const width = Math.max(right - left, 0.002);
-                                    return (
-                                      <div
-                                        className="timeline-session-bar"
-                                        style={{
-                                          left: `${left * 100}%`,
-                                          width: `${width * 100}%`,
-                                          background: `${group.userColor}15`,
-                                          borderColor: `${group.userColor}30`,
-                                        }}
-                                      />
-                                    );
-                                  })()}
+                  {/* "Now" line spanning full height */}
+                  <div className="tl-now-line" style={{ left: '100%' }}>
+                    <span className="tl-now-label">now</span>
+                  </div>
 
-                                  {/* Prompt dots */}
-                                  {session.items.map(item => {
-                                    const x = getX(item.promptSubmittedAt!);
-                                    return (
-                                      <div
-                                        key={item.id}
-                                        className="timeline-dot"
-                                        style={{
-                                          left: `${x * 100}%`,
-                                          background: group.userColor,
-                                        }}
-                                        onClick={(e) => { e.stopPropagation(); handleDotClick(item); }}
-                                        onMouseEnter={(e) => handleDotHover(e, item)}
-                                        onMouseLeave={handleDotLeave}
-                                      />
-                                    );
-                                  })}
-                                </div>
-                              );
-                            })
+                  {/* Rows */}
+                  {groups.map((group) => (
+                    <div key={group.userEmail} className="tl-group-rows">
+                      {/* Spacer for user header */}
+                      <div style={{ height: USER_HEADER_HEIGHT }} />
+
+                      {group.repos.map((repo) => (
+                        repo.branches.map((branch) => (
+                          branch.sessions.map((session) => (
+                            <div
+                              key={session.sessionId}
+                              className="tl-row"
+                              style={{ height: ROW_HEIGHT }}
+                              onClick={() => router.push(`/sessions/${session.sessionId}`)}
+                            >
+                              {/* Session span bar */}
+                              {(() => {
+                                const times = session.items
+                                  .map(it => new Date(it.promptSubmittedAt!).getTime())
+                                  .filter(t => t >= timeStart.getTime());
+                                if (times.length === 0) return null;
+                                const minT = Math.min(...times);
+                                const maxT = Math.max(...times);
+                                const left = (minT - timeStart.getTime()) / totalMs;
+                                const right = (maxT - timeStart.getTime()) / totalMs;
+                                const width = Math.max(right - left, 0.003);
+                                return (
+                                  <div
+                                    className="tl-session-bar"
+                                    style={{
+                                      left: `${left * 100}%`,
+                                      width: `${width * 100}%`,
+                                      background: `${group.userColor}12`,
+                                      borderColor: `${group.userColor}25`,
+                                    }}
+                                  />
+                                );
+                              })()}
+
+                              {/* Prompt dots */}
+                              {session.items.map(item => {
+                                const x = getX(item.promptSubmittedAt!);
+                                const size = getDotSize(item);
+                                return (
+                                  <div
+                                    key={item.id}
+                                    className="tl-dot"
+                                    style={{
+                                      left: `${x * 100}%`,
+                                      background: group.userColor,
+                                      width: size,
+                                      height: size,
+                                    }}
+                                    onClick={(e) => { e.stopPropagation(); handleDotClick(item); }}
+                                    onMouseEnter={(e) => handleDotHover(e, item)}
+                                    onMouseLeave={handleDotLeave}
+                                  />
+                                );
+                              })}
+                            </div>
                           ))
-                        ))}
-                      </div>
-                    ));
-                  })()}
+                        ))
+                      ))}
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Legend */}
+        {feed.data && feed.data.data.length > 0 && (
+          <div className="tl-legend">
+            <span className="tl-legend-title">ドットサイズ:</span>
+            <span className="tl-legend-item">
+              <span className="tl-legend-dot tl-legend-dot--sm" /> &lt;1K
+            </span>
+            <span className="tl-legend-item">
+              <span className="tl-legend-dot tl-legend-dot--md" /> 1K-10K
+            </span>
+            <span className="tl-legend-item">
+              <span className="tl-legend-dot tl-legend-dot--lg" /> 10K-50K
+            </span>
+            <span className="tl-legend-item">
+              <span className="tl-legend-dot tl-legend-dot--xl" /> 50K+
+            </span>
+            <span className="tl-legend-sep" />
+            <span className="tl-legend-hint">クリックでセッション詳細へ</span>
           </div>
         )}
       </div>
@@ -397,26 +453,25 @@ export function PromptFeedPage() {
       {/* Tooltip */}
       {tooltip && (
         <div
-          className="timeline-tooltip"
+          className="tl-tooltip"
           style={{
             left: tooltip.x,
             top: tooltip.y,
           }}
         >
-          <div className="timeline-tooltip-header">
+          <div className="tl-tooltip-header">
             <ModelBadge model={tooltip.item.model} />
-            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+            <span className="tl-tooltip-time">
               {new Date(tooltip.item.promptSubmittedAt!).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
             </span>
           </div>
-          <div className="timeline-tooltip-body">
+          <div className="tl-tooltip-body">
             {truncate(tooltip.item.promptText || '', 120)}
           </div>
-          <div className="timeline-tooltip-meta">
+          <div className="tl-tooltip-meta">
             <span>{formatCompact(tooltip.item.inputTokens + tooltip.item.outputTokens)} tokens</span>
             {tooltip.item.toolCount > 0 && <span>{tooltip.item.toolCount} tools</span>}
           </div>
-          <div className="timeline-tooltip-hint">クリックでセッション詳細へ</div>
         </div>
       )}
     </>

@@ -85,6 +85,7 @@ npx prisma studio               # DB GUI
 - **デュアル tsconfig**: `tsconfig.json`（Next.js + React）と `tsconfig.server.json`（Express、`src/app`, `src/components`, `src/hooks` を除外）
 - **`NEXT_PUBLIC_API_KEY`**: Next.js クライアントコンポーネントから Dashboard API にアクセスするための環境変数。`.env` に `API_KEY` と同じ値を設定
 - **API キー認証**: Hook API は `X-API-Key` ヘッダーで保護。サーバー `.env`（`API_KEY`）とクライアント `config.json`（`api_key`）で同じ値を設定する。未設定時は認証スキップ（開発モード）。Docker で `.env` を変更した場合は `docker compose up -d --force-recreate` が必要（`restart` では反映されない）
+- **GitHub MCP 連携**: `.env` に `GITHUB_PAT` を設定すると、AI チャット・メンバー分析で GitHub リポジトリの内容を参照可能。GitHub Copilot MCP サーバー（`https://api.githubcopilot.com/mcp`）を `McpHttpServerConfig` で接続。未設定時は GitHub ツールがスキップされる
 
 ## 詳細ドキュメント（必要時に参照）
 

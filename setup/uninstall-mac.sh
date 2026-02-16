@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================
-# Claude Code Activity Tracker - macOS アンインストール
+# Claude Code Activity Tracker - macOS Uninstaller
 # ============================================================
 
 set -e
@@ -14,36 +14,36 @@ echo " Claude Code Activity Tracker Uninstaller"
 echo "========================================"
 echo ""
 
-read -p "フックを削除し、設定を元に戻しますか? (y/N): " CONFIRM
+read -p "Remove hooks and restore settings? (y/N): " CONFIRM
 if [ "$CONFIRM" != "y" ] && [ "$CONFIRM" != "Y" ]; then
-    echo "キャンセルしました"
+    echo "Cancelled."
     exit 0
 fi
 
-# フックファイル削除
-echo "フックファイルを削除中..."
+# Remove hook files
+echo "Removing hook files..."
 for FILE in aidd-log-session-start.js aidd-log-prompt.js aidd-log-subagent-start.js aidd-log-subagent-stop.js aidd-log-stop.js aidd-log-session-end.js config.json package.json .claude-email-cache debug.log; do
     if [ -f "$HOOKS_DIR/$FILE" ]; then
         rm "$HOOKS_DIR/$FILE"
-        echo "  削除: $FILE"
+        echo "  Removed: $FILE"
     fi
 done
 
-# shared/ ディレクトリ削除
+# Remove shared/ directory
 if [ -d "$HOOKS_DIR/shared" ]; then
     rm -rf "$HOOKS_DIR/shared"
-    echo "  削除: shared/"
+    echo "  Removed: shared/"
 fi
 
-# hooks ディレクトリが空なら削除
+# Remove hooks directory if empty
 if [ -d "$HOOKS_DIR" ] && [ -z "$(ls -A "$HOOKS_DIR")" ]; then
     rmdir "$HOOKS_DIR"
-    echo "  削除: hooks/"
+    echo "  Removed: hooks/"
 fi
 
-# settings.json からトラッカーのフックのみ削除（他のフック設定は保持）
+# Remove tracker hooks from settings.json (preserve other hooks)
 if [ -f "$SETTINGS_FILE" ]; then
-    echo "設定ファイルからトラッカーのフックを削除中..."
+    echo "Removing tracker hooks from settings.json..."
     node -e "
 const fs = require('fs');
 const path = '$SETTINGS_FILE';
@@ -64,18 +64,19 @@ try {
         if (Object.keys(s.hooks).length === 0) delete s.hooks;
     }
     fs.writeFileSync(path, JSON.stringify(s, null, 2) + '\n', 'utf8');
-    console.log('  更新完了: ' + path);
-} catch(e) { console.log('  スキップ: ' + e.message); }
+    console.log('  Updated: ' + path);
+} catch(e) { console.log('  Skipped: ' + e.message); }
 "
 fi
 
-# tmp クリーンアップ
+# Cleanup temp files
 LEVELDB_DIR="$(node -e "console.log(require('os').tmpdir())")/claude-hook-leveldb"
 if [ -d "$LEVELDB_DIR" ]; then
     rm -rf "$LEVELDB_DIR"
-    echo "  削除: claude-hook-leveldb (tmp)"
+    echo "  Removed: claude-hook-leveldb (tmp)"
 fi
 
 echo ""
-echo "アンインストール完了"
-echo "Claude Code を再起動してください"
+echo "Uninstall complete."
+echo "Please restart Claude Code."
+echo ""

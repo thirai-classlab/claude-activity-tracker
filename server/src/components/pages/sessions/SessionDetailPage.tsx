@@ -413,6 +413,32 @@ export function SessionDetailPage({ sessionId }: SessionDetailPageProps) {
           </div>
         </ChartCard>
 
+        {/* Session-level file changes (unlinked to specific turns) */}
+        {d.sessionFileChanges && d.sessionFileChanges.length > 0 && (
+          <ChartCard title={`変更ファイル一覧 (${d.sessionFileChanges.length}件)`}>
+            <div className="session-file-changes">
+              {(() => {
+                // Deduplicate by filePath, keep last operation
+                const fileMap = new Map<string, string>();
+                for (const fc of d.sessionFileChanges) {
+                  fileMap.set(fc.filePath, fc.operation);
+                }
+                return Array.from(fileMap.entries()).map(([path, op]) => {
+                  const fileName = path.split('/').pop() || path;
+                  const dir = path.substring(0, path.length - fileName.length);
+                  return (
+                    <div key={path} className="session-file-item">
+                      <span className={`file-op-badge file-op-${op}`}>{op}</span>
+                      <span className="file-dir">{dir}</span>
+                      <span className="file-name">{fileName}</span>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          </ChartCard>
+        )}
+
         {/* Session Events */}
         {d.sessionEvents.length > 0 && (
           <ChartCard title={`セッションイベント (${d.sessionEvents.length}件)`}>

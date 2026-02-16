@@ -176,6 +176,7 @@ export interface SessionDetailResponse {
   permissionMode: string | null;
   endReason: string | null;
   turns: TurnDetail[];
+  sessionFileChanges: FileChangeDetail[];
   sessionEvents: {
     eventType: string;
     eventSubtype: string | null;

@@ -191,6 +191,24 @@ function createDashboardTools() {
   });
 }
 
+// ─── GitHub MCP Server Config ────────────────────────────────────────────
+
+function getGitHubMcpConfig(): Record<string, { type: 'http'; url: string; headers: Record<string, string> }> {
+  const pat = process.env.GITHUB_PAT;
+  if (!pat) return {};
+  return {
+    'github': {
+      type: 'http' as const,
+      url: 'https://api.githubcopilot.com/mcp',
+      headers: { 'Authorization': `Bearer ${pat}` },
+    },
+  };
+}
+
+function getGitHubAllowedTools(): string[] {
+  return process.env.GITHUB_PAT ? ['mcp__github__*'] : [];
+}
+
 // ─── Claude Code executable path ────────────────────────────────────────
 
 function findClaudeExecutable(): string | undefined {
@@ -220,7 +238,7 @@ function findClaudeExecutable(): string | undefined {
 // ─── System Prompt ──────────────────────────────────────────────────────
 
 function buildSystemPrompt(context?: ChatRequest['context']): string {
-  const base = `あなたはAI駆動開発チームの分析アシスタントです。
+  let base = `あなたはAI駆動開発チームの分析アシスタントです。
 チームのClaude Code利用状況データを分析し、洞察やアドバイスを提供します。
 
 あなたには dashboard-db のツール群が利用可能です。
@@ -246,6 +264,23 @@ function buildSystemPrompt(context?: ChatRequest['context']): string {
 - 改善提案がある場合は具体的なアクションを提示してください
 - マークダウン形式で見やすく回答してください
 - 推測は「推測ですが」と前置きしてください`;
+
+  // GitHub MCP tools available
+  if (process.env.GITHUB_PAT) {
+    base += `
+
+GitHub連携ツール（利用可能）:
+- リポジトリのファイル内容を取得（CLAUDE.md, README.md, ソースコード等）
+- コミット履歴、PR情報、Issue の取得
+- ブランチ情報の取得
+- コード検索
+
+GitHubツールの活用例:
+- CLAUDE.md のルール準拠チェック（ルールが定義されているか、実際に守られているか）
+- ファイル変更の品質評価（コミットメッセージ、PR の説明）
+- コンテキストエンジニアリングの評価（CLAUDE.md の充実度、プロジェクト構造の整理度）
+- リポジトリの README やドキュメント品質の評価`;
+  }
 
   if (context?.type === 'member' && context.email) {
     return `${base}
@@ -299,6 +334,7 @@ ${email}
 4. get_heatmap で活動パターンを確認
 5. get_sessions で最近のセッション傾向を確認
 6. 必要に応じて get_session_detail で特徴的なセッションを深掘り
+7. (GitHub連携が有効な場合) メンバーが関連するリポジトリのCLAUDE.mdやREADMEを取得し、ルール準拠状況を評価。最近のコミットやPRの品質を確認し、コンテキストエンジニアリングの評価を行う
 
 ## 出力形式（マークダウン）
 
@@ -328,6 +364,33 @@ ${email}
 - 推測は「推測ですが」と前置き
 - チーム平均との比較を必ず含める
 - エンジニアの日常業務に即した具体的アドバイスを提供`;
+
+  // GitHub evaluation section
+  if (process.env.GITHUB_PAT) {
+    prompt += `
+
+## GitHub連携による追加評価（利用可能）
+
+GitHubツールを活用して以下も評価してください:
+
+### コンテキストエンジニアリング評価
+- CLAUDE.md の充実度（ルール、構造、ドキュメント参照）
+- README.md の品質（セットアップ手順、アーキテクチャ説明）
+- プロジェクト構造の整理度
+
+### ルール準拠チェック
+- CLAUDE.md に定義されたルールに沿った開発ができているか
+- コミットメッセージの品質
+- ドキュメント更新ルールの準拠
+
+### 出力に追加するセクション
+上記の評価結果を以下のセクションとして出力に含めてください:
+
+### コンテキストエンジニアリング評価
+- CLAUDE.md の充実度と改善提案
+- ルール準拠状況
+- リポジトリ構造の評価`;
+  }
 
   if (previousAnalysis) {
     prompt += `
@@ -401,8 +464,9 @@ export function registerChatSocket(io: SocketIOServer): void {
             systemPrompt: buildSystemPrompt(payload.context),
             mcpServers: {
               'dashboard-db': dashboardTools,
+              ...getGitHubMcpConfig(),
             },
-            allowedTools: ['mcp__dashboard-db__*'],
+            allowedTools: ['mcp__dashboard-db__*', ...getGitHubAllowedTools()],
             maxTurns: 10,
             model: 'claude-sonnet-4-5-20250929',
             ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),
@@ -415,8 +479,8 @@ export function registerChatSocket(io: SocketIOServer): void {
                 hasOutput = true;
               } else if ('type' in block && block.type === 'tool_use') {
                 const toolBlock = block as { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> };
-                // Strip mcp__dashboard-db__ prefix for display
-                const displayName = toolBlock.name.replace('mcp__dashboard-db__', '');
+                // Strip mcp server prefix for display
+                const displayName = toolBlock.name.replace(/^mcp__[^_]+__/, '');
                 pendingTools.set(toolBlock.id, displayName);
                 socket.emit('chat:tool_use', {
                   toolName: displayName,
@@ -515,8 +579,9 @@ KPI 4階層（セッション効率・AI活用品質・コスト効率・活動�
             systemPrompt: buildAnalysisSystemPrompt(payload.email, previousContent),
             mcpServers: {
               'dashboard-db': dashboardTools,
+              ...getGitHubMcpConfig(),
             },
-            allowedTools: ['mcp__dashboard-db__*'],
+            allowedTools: ['mcp__dashboard-db__*', ...getGitHubAllowedTools()],
             maxTurns: 15,
             model: 'claude-sonnet-4-5-20250929',
             ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),
@@ -530,7 +595,7 @@ KPI 4階層（セッション効率・AI活用品質・コスト効率・活動�
                 hasOutput = true;
               } else if ('type' in block && block.type === 'tool_use') {
                 const toolBlock = block as { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> };
-                const displayName = toolBlock.name.replace('mcp__dashboard-db__', '');
+                const displayName = toolBlock.name.replace(/^mcp__[^_]+__/, '');
                 pendingTools.set(toolBlock.id, displayName);
                 socket.emit('chat:tool_use', {
                   toolName: displayName,

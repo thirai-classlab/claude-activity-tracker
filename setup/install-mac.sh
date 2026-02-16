@@ -1,8 +1,8 @@
 #!/bin/bash
 # ============================================================
-# Claude Code Activity Tracker - macOS セットアップスクリプト
+# Claude Code Activity Tracker - macOS Setup Script
 # ============================================================
-# 使い方: bash install-mac.sh
+# Usage: bash install-mac.sh
 # ============================================================
 
 set -e
@@ -19,12 +19,12 @@ echo " for macOS"
 echo "========================================"
 echo ""
 
-# --- 1. 前提条件チェック ---
-echo "[1/6] 前提条件をチェック中..."
+# --- 1. Prerequisites Check ---
+echo "[1/6] Checking prerequisites..."
 
 if ! command -v node &> /dev/null; then
-    echo "ERROR: Node.js がインストールされていません"
-    echo "  brew install node でインストールしてください"
+    echo "ERROR: Node.js is not installed"
+    echo "  Install with: brew install node"
     exit 1
 fi
 
@@ -32,16 +32,16 @@ NODE_VER=$(node -v)
 echo "  Node.js: $NODE_VER"
 
 if ! command -v git &> /dev/null; then
-    echo "WARNING: git が見つかりません（git情報の取得ができません）"
+    echo "WARNING: git not found (git info collection will be affected)"
 fi
 
 echo "  OK"
 echo ""
 
-# --- 2. API接続設定 ---
-echo "[2/6] API接続設定..."
+# --- 2. API Connection Settings ---
+echo "[2/6] Configuring API connection..."
 
-# 既存の config.json から設定を読み込む
+# Read existing config.json
 EXISTING_API_URL=""
 EXISTING_API_KEY=""
 EXISTING_DEBUG=""
@@ -52,38 +52,38 @@ if [ -f "$CONFIG_FILE" ]; then
     EXISTING_DEBUG=$(node -e "try{console.log(JSON.parse(require('fs').readFileSync('$CONFIG_FILE','utf8')).debug===true?'true':'false')}catch{}" 2>/dev/null)
 fi
 
-# デフォルト config.json（配布元）から読み込み
+# Read default config.json from distribution source
 DEFAULT_SRC_URL=$(node -e "try{console.log(JSON.parse(require('fs').readFileSync('$HOOKS_SRC/config.json','utf8')).api_url||'')}catch{}" 2>/dev/null)
 DEFAULT_SRC_KEY=$(node -e "try{console.log(JSON.parse(require('fs').readFileSync('$HOOKS_SRC/config.json','utf8')).api_key||'')}catch{}" 2>/dev/null)
 
-# API URL（既存 → デフォルト → localhost の優先順位）
+# API URL (existing > default > localhost priority)
 DEFAULT_URL="${EXISTING_API_URL:-${DEFAULT_SRC_URL:-http://localhost:3001}}"
 read -p "  API URL [$DEFAULT_URL]: " API_URL
 API_URL="${API_URL:-$DEFAULT_URL}"
 
-# API Key（既存またはデフォルトがある場合はスキップ）
+# API Key (skip if existing or default available)
 if [ -n "$EXISTING_API_KEY" ]; then
     API_KEY="$EXISTING_API_KEY"
-    echo "  API Key: (既存の設定を使用)"
+    echo "  API Key: (using existing)"
 elif [ -n "$DEFAULT_SRC_KEY" ]; then
     API_KEY="$DEFAULT_SRC_KEY"
-    echo "  API Key: (デフォルト設定を使用)"
+    echo "  API Key: (using default)"
 else
-    echo "  API Key（管理者から共有されたキーを入力してください）"
+    echo "  API Key (enter the key shared by your admin)"
     read -p "  API Key: " API_KEY
     if [ -z "$API_KEY" ]; then
-        echo "  WARNING: API Key が未入力です。サーバー側で認証が有効な場合、データ送信が拒否されます。"
+        echo "  WARNING: API Key is empty. Data will be rejected if server auth is enabled."
     fi
 fi
 
-# デバッグモード
+# Debug mode
 DEFAULT_DEBUG="${EXISTING_DEBUG:-false}"
 if [ "$DEFAULT_DEBUG" = "true" ]; then
     DEBUG_DEFAULT="Y"
 else
     DEBUG_DEFAULT="N"
 fi
-read -p "  デバッグモード (y/N) [$DEBUG_DEFAULT]: " DEBUG_MODE
+read -p "  Debug mode (y/N) [$DEBUG_DEFAULT]: " DEBUG_MODE
 if [ -z "$DEBUG_MODE" ]; then
     DEBUG_FLAG="$DEFAULT_DEBUG"
 elif [ "$DEBUG_MODE" = "y" ] || [ "$DEBUG_MODE" = "Y" ]; then
@@ -93,48 +93,48 @@ else
 fi
 
 echo ""
-echo "  設定内容:"
+echo "  Configuration:"
 echo "    API URL:  $API_URL"
-if [ -n "$API_KEY" ]; then echo "    API Key:  (設定済み)"; else echo "    API Key:  (未設定)"; fi
+if [ -n "$API_KEY" ]; then echo "    API Key:  (set)"; else echo "    API Key:  (not set)"; fi
 echo "    Debug:    $DEBUG_FLAG"
 echo ""
 
-# --- 3. ディレクトリ作成 & フックファイルコピー ---
-echo "[3/6] フックファイルをインストール中..."
+# --- 3. Directory Creation & Hook File Copy ---
+echo "[3/6] Installing hook files..."
 
 mkdir -p "$HOOKS_DIR"
 mkdir -p "$HOOKS_DIR/shared"
 
-# フックファイルをコピー（6ファイル）
+# Copy 6 hook files
 for FILE in aidd-log-session-start.js aidd-log-prompt.js aidd-log-subagent-start.js aidd-log-subagent-stop.js aidd-log-stop.js aidd-log-session-end.js; do
     if [ -f "$HOOKS_SRC/$FILE" ]; then
         cp "$HOOKS_SRC/$FILE" "$HOOKS_DIR/$FILE"
-        echo "  コピー: $FILE"
+        echo "  Copy: $FILE"
     else
-        echo "  ERROR: $HOOKS_SRC/$FILE が見つかりません"
+        echo "  ERROR: $HOOKS_SRC/$FILE not found"
         exit 1
     fi
 done
 
-# 共有モジュールをコピー
+# Copy shared module
 if [ -f "$HOOKS_SRC/shared/utils.js" ]; then
     cp "$HOOKS_SRC/shared/utils.js" "$HOOKS_DIR/shared/utils.js"
-    echo "  コピー: shared/utils.js"
+    echo "  Copy: shared/utils.js"
 else
-    echo "  ERROR: $HOOKS_SRC/shared/utils.js が見つかりません"
+    echo "  ERROR: $HOOKS_SRC/shared/utils.js not found"
     exit 1
 fi
 
-# package.json をコピー
+# Copy package.json
 if [ -f "$HOOKS_SRC/package.json" ]; then
     cp "$HOOKS_SRC/package.json" "$HOOKS_DIR/package.json"
-    echo "  コピー: package.json"
+    echo "  Copy: package.json"
 else
-    echo "  ERROR: $HOOKS_SRC/package.json が見つかりません"
+    echo "  ERROR: $HOOKS_SRC/package.json not found"
     exit 1
 fi
 
-# config.json を作成/更新（新フォーマット）
+# Create/update config.json
 cat > "$HOOKS_DIR/config.json" << EOF
 {
   "api_url": "$API_URL",
@@ -142,29 +142,27 @@ cat > "$HOOKS_DIR/config.json" << EOF
   "debug": $DEBUG_FLAG
 }
 EOF
-echo "  作成: config.json"
+echo "  Create: config.json"
 echo ""
 
-# --- 4. npm 依存パッケージ（classic-level）プリインストール ---
-echo "[4/6] npm パッケージをプリインストール中..."
+# --- 4. npm dependency pre-install ---
+echo "[4/6] Pre-installing npm packages..."
 
 LEVELDB_DIR="$(node -e "console.log(require('os').tmpdir())")/claude-hook-leveldb"
 if [ ! -d "$LEVELDB_DIR/node_modules/classic-level" ]; then
     mkdir -p "$LEVELDB_DIR"
-    (cd "$LEVELDB_DIR" && npm install --silent classic-level 2>&1) || echo "  WARNING: classic-level のインストールに失敗しました（Claudeアカウントのメール取得に影響します）"
-    echo "  インストール完了: classic-level"
+    (cd "$LEVELDB_DIR" && npm install --silent classic-level 2>&1) || echo "  WARNING: classic-level installation failed (affects email cache)"
+    echo "  Installed: classic-level"
 else
-    echo "  既にインストール済み: classic-level"
+    echo "  Already installed: classic-level"
 fi
 echo ""
 
-# --- 5. グローバル settings.json を更新 ---
-echo "[5/6] Claude Code グローバル設定を更新中..."
+# --- 5. Update global settings.json ---
+echo "[5/6] Updating Claude Code global settings..."
 
 HOOKS_ABS_PATH="$HOOKS_DIR"
 
-# Node.js でJSON更新（jqが無い環境にも対応）
-# 既存のフック設定を保持しつつ、Tracker用フックをマージする
 node -e "
 const fs = require('fs');
 const settingsPath = '$SETTINGS_FILE';
@@ -177,7 +175,7 @@ if (fs.existsSync(settingsPath)) {
 
 if (!settings.hooks) settings.hooks = {};
 
-// Tracker が管理するフック定義
+// Tracker hook definitions
 const trackerHooks = {
     SessionStart:      { command: 'node \"' + hooksDir + '/aidd-log-session-start.js\"', timeout: 15 },
     UserPromptSubmit:  { command: 'node \"' + hooksDir + '/aidd-log-prompt.js\"', timeout: 10 },
@@ -190,16 +188,16 @@ const trackerHooks = {
 for (const [event, def] of Object.entries(trackerHooks)) {
     if (!settings.hooks[event]) settings.hooks[event] = [];
 
-    // 既存のトラッカーフックを除去（再インストール対応）
+    // Remove existing tracker hooks (reinstall support)
     for (const group of settings.hooks[event]) {
         if (group.hooks) {
             group.hooks = group.hooks.filter(h => !h.command || !h.command.includes('/hooks/aidd-log-'));
         }
     }
-    // 空になったグループを削除
+    // Remove empty groups
     settings.hooks[event] = settings.hooks[event].filter(g => g.hooks && g.hooks.length > 0);
 
-    // トラッカーフックを追加
+    // Add tracker hook
     settings.hooks[event].push({
         matcher: '',
         hooks: [{ type: 'command', command: def.command, timeout: def.timeout }]
@@ -207,35 +205,26 @@ for (const [event, def] of Object.entries(trackerHooks)) {
 }
 
 fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n', 'utf8');
-console.log('  更新完了: ' + settingsPath);
+console.log('  Updated: ' + settingsPath);
 "
 echo ""
 
-# --- 6. 確認 & ヘルスチェック ---
-echo "[6/6] インストール確認..."
-echo ""
-echo "  フックファイル:"
-ls -la "$HOOKS_DIR"/*.js "$HOOKS_DIR"/shared/*.js "$HOOKS_DIR"/config.json "$HOOKS_DIR"/package.json 2>/dev/null | awk '{print "    " $NF}'
-echo ""
-echo "  設定ファイル:"
-echo "    $SETTINGS_FILE"
+# --- 6. Health Check ---
+echo "[6/6] API server health check..."
 echo ""
 
-# APIサーバーヘルスチェック
-echo "  APIサーバーヘルスチェック..."
 HEALTH_RESPONSE=$(curl -s --max-time 5 "$API_URL/health" 2>/dev/null) || true
 if [ -n "$HEALTH_RESPONSE" ]; then
     echo "    $API_URL/health -> OK"
-    echo "    レスポンス: $HEALTH_RESPONSE"
+    echo "    Response: $HEALTH_RESPONSE"
 else
-    echo "    $API_URL/health -> 接続できません"
-    echo "    WARNING: APIサーバーが起動していない可能性があります"
-    echo "    サーバーを起動してから Claude Code を使用してください"
+    echo "    $API_URL/health -> Cannot connect"
+    echo "    WARNING: API server may not be running"
 fi
 echo ""
 
-# テスト実行
-echo "  動作テスト..."
+# Hook tests
+echo "  Running tests..."
 TEST_RESULT=$(echo '{"session_id":"install-test","prompt":"test","model":"test"}' | node "$HOOKS_DIR/aidd-log-session-start.js" 2>&1; echo $?)
 if [ "$(echo "$TEST_RESULT" | tail -1)" = "0" ]; then
     echo "    SessionStart hook: OK"
@@ -280,13 +269,13 @@ fi
 
 echo ""
 echo "========================================"
-echo " インストール完了!"
+echo " Installation complete!"
 echo "========================================"
 echo ""
-echo " 次のステップ:"
-echo "  1. APIサーバーが起動していることを確認してください"
-echo "  2. Claude Code を再起動してください"
+echo " Next steps:"
+echo "  1. Ensure the API server is running"
+echo "  2. Restart Claude Code"
 echo ""
-echo " アンインストール:"
+echo " Uninstall:"
 echo "  bash $(dirname "$0")/uninstall-mac.sh"
 echo ""

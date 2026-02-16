@@ -290,7 +290,7 @@ export async function handleStop(data: {
     status: string;
     error_message?: string;
   }>;
-  file_changes?: Array<{ file_path: string; operation: string }>;
+  file_changes?: Array<{ file_path: string; operation: string; turn_index?: number | null }>;
   session_events?: Array<{
     event_type: string;
     event_subtype?: string;
@@ -366,13 +366,21 @@ export async function handleStop(data: {
     });
   }
 
-  // Create file_change records
+  // Create file_change records (link to turns if turn_index is available)
   if (data.file_changes?.length) {
+    // Pre-fetch turns to map turn_index → turn_id
+    const turns = await prisma.turn.findMany({
+      where: { sessionId },
+      orderBy: { turnNumber: 'asc' },
+      select: { id: true },
+    });
+
     await prisma.fileChange.createMany({
       data: data.file_changes.map((f) => ({
         sessionId,
         filePath: f.file_path,
         operation: f.operation,
+        turnId: (f.turn_index != null && turns[f.turn_index]) ? turns[f.turn_index].id : null,
       })),
     });
   }
@@ -417,7 +425,7 @@ export async function handleStop(data: {
       await prisma.turn.update({
         where: { id: turns[i].id },
         data: {
-          responseText: rt.text?.substring(0, 5000) || null,
+          responseText: rt.text?.substring(0, 65000) || null,
           ...(rt.model ? { model: rt.model } : {}),
           ...(rt.stopReason ? { stopReason: rt.stopReason } : {}),
           ...(rt.inputTokens != null ? { inputTokens: rt.inputTokens } : {}),

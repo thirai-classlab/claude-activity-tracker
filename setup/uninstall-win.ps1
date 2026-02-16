@@ -1,7 +1,7 @@
-﻿# ============================================================
-# Claude Code Activity Tracker - Windows アンインストーラー
 # ============================================================
-# 使い方: powershell -ExecutionPolicy Bypass -File uninstall-win.ps1
+# Claude Code Activity Tracker - Windows Uninstaller
+# ============================================================
+# Usage: powershell -ExecutionPolicy Bypass -File uninstall-win.ps1
 # ============================================================
 
 $ErrorActionPreference = "Stop"
@@ -20,41 +20,41 @@ Write-Host " for Windows" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
-$confirm = Read-Host "フックを削除して設定を復元しますか？ (y/N)"
+$confirm = Read-Host "Remove hooks and restore settings? (y/N)"
 if ($confirm -ne "y" -and $confirm -ne "Y") {
-    Write-Host "キャンセルしました。"
+    Write-Host "Cancelled."
     exit 0
 }
 
-# --- 1. フックファイル削除 ---
+# --- 1. Remove hook files ---
 Write-Host ""
-Write-Host "[1/3] フックファイルを削除中..." -ForegroundColor Yellow
+Write-Host "[1/3] Removing hook files..." -ForegroundColor Yellow
 
-# shared/ サブディレクトリを削除
+# Remove shared/ subdirectory
 $SharedDir = Join-Path $HooksDir "shared"
 if (Test-Path $SharedDir) {
     Remove-Item $SharedDir -Recurse -Force
-    Write-Host "  削除: shared/"
+    Write-Host "  Removed: shared/"
 }
 
-# 6つのフックファイル + 設定ファイル + キャッシュファイルを削除
+# Remove 6 hook files + config + cache files
 foreach ($file in @("aidd-log-session-start.js", "aidd-log-prompt.js", "aidd-log-subagent-start.js", "aidd-log-subagent-stop.js", "aidd-log-stop.js", "aidd-log-session-end.js", "package.json", "config.json", ".claude-email-cache", "debug.log")) {
     $path = Join-Path $HooksDir $file
     if (Test-Path $path) {
         Remove-Item $path -Force
-        Write-Host "  削除: $file"
+        Write-Host "  Removed: $file"
     }
 }
 
-# hooks ディレクトリが空なら削除
+# Remove hooks directory if empty
 if ((Test-Path $HooksDir) -and ((Get-ChildItem $HooksDir | Measure-Object).Count -eq 0)) {
     Remove-Item $HooksDir -Force
-    Write-Host "  削除: hooks/"
+    Write-Host "  Removed: hooks/"
 }
 
-# --- 2. settings.json から hooks セクション削除 ---
+# --- 2. Remove hooks section from settings.json ---
 Write-Host ""
-Write-Host "[2/3] settings.json からフック設定を削除中..." -ForegroundColor Yellow
+Write-Host "[2/3] Removing hook settings from settings.json..." -ForegroundColor Yellow
 
 if (Test-Path $SettingsFile) {
     $SettingsFileJs = $SettingsFile -replace '\\', '/'
@@ -86,19 +86,18 @@ try {
     $jsContent = $jsTemplate.Replace('__SETTINGS_PATH__', $SettingsFileJs)
 
     $TmpDir = & node -e "console.log(require('os').tmpdir())"
-    # BOMなしUTF-8で書き込み（PowerShell 5.x の -Encoding UTF8 はBOM付きのため使わない）
     $tmpScript = Join-Path $TmpDir "claude-uninstall.js"
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllText($tmpScript, $jsContent, $utf8NoBom)
     & node $tmpScript
     Remove-Item $tmpScript -ErrorAction SilentlyContinue
 } else {
-    Write-Host "  スキップ: settings.json が見つかりません"
+    Write-Host "  Skipped: settings.json not found"
 }
 
-# --- 3. 一時ファイル削除 ---
+# --- 3. Cleanup temp files ---
 Write-Host ""
-Write-Host "[3/3] 一時ファイルを削除中..." -ForegroundColor Yellow
+Write-Host "[3/3] Cleaning up temp files..." -ForegroundColor Yellow
 
 if (-not $TmpDir) {
     $TmpDir = & node -e "console.log(require('os').tmpdir())"
@@ -106,15 +105,15 @@ if (-not $TmpDir) {
 $LevelDbDir = Join-Path $TmpDir "claude-hook-leveldb"
 if (Test-Path $LevelDbDir) {
     Remove-Item $LevelDbDir -Recurse -Force
-    Write-Host "  削除: claude-hook-leveldb (tmp)"
+    Write-Host "  Removed: claude-hook-leveldb (tmp)"
 } else {
-    Write-Host "  スキップ: claude-hook-leveldb なし"
+    Write-Host "  Skipped: claude-hook-leveldb not found"
 }
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Green
-Write-Host " アンインストール完了!" -ForegroundColor Green
+Write-Host " Uninstall complete!" -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Green
 Write-Host ""
-Write-Host " Claude Code を再起動してください" -ForegroundColor White
+Write-Host " Please restart Claude Code" -ForegroundColor White
 Write-Host ""

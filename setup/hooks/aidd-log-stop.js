@@ -96,6 +96,7 @@ const debug = createDebugger(hookDir, config, 'Stop');
     file_changes: parsed.fileChanges.map((fc) => ({
       file_path: fc.filePath,
       operation: fc.operation,
+      turn_index: fc.turnIndex ?? null,
     })),
     session_events: sessionEvents,
     turn_durations: parsed.turnDurations.map((td) => ({

@@ -30,6 +30,7 @@ services:
       - .env
     environment:
       - NODE_ENV=production
+      - GITHUB_PAT=${GITHUB_PAT}
     depends_on:
       db:
         condition: service_healthy

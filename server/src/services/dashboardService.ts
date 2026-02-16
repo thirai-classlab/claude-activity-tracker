@@ -44,7 +44,10 @@ function getCostRates(model: string | null) {
 // ─── Where-clause Builder ───────────────────────────────────────────────────
 
 function buildSessionWhere(filters: DashboardFilters) {
-  const where: any = {};
+  const where: any = {
+    // Exclude sessions with 0 turns (stubs, incomplete)
+    turns: { some: {} },
+  };
   if (filters.from) {
     where.startedAt = { ...where.startedAt, gte: new Date(filters.from) };
   }
@@ -65,7 +68,10 @@ function buildSessionWhere(filters: DashboardFilters) {
 
 /** Build a raw SQL WHERE clause fragment and params array for raw queries. */
 function buildRawWhere(filters: DashboardFilters, tableAlias = 's') {
-  const conditions: string[] = [];
+  // Always exclude sessions with 0 turns
+  const conditions: string[] = [
+    `(SELECT COUNT(*) FROM turns t WHERE t.session_id = ${tableAlias}.id) > 0`,
+  ];
   const params: any[] = [];
 
   if (filters.from) {
@@ -89,7 +95,7 @@ function buildRawWhere(filters: DashboardFilters, tableAlias = 's') {
     params.push(filters.model);
   }
 
-  const whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
+  const whereClause = 'WHERE ' + conditions.join(' AND ');
   return { whereClause, params };
 }
 
@@ -556,10 +562,97 @@ export async function getSessionDetail(id: number) {
   // Use actual turns record count instead of metadata turnCount
   const actualTurnCount = session.turns.length;
 
+  // Fetch ALL file changes for this session (including turn_id=NULL)
+  const allFileChanges = await prisma.fileChange.findMany({
+    where: { sessionId: id },
+    select: { filePath: true, operation: true, turnId: true },
+    orderBy: { id: 'asc' },
+  });
+
+  // Fetch ALL tool_uses with file operations (turn_id=NULL included)
+  const fileToolUses = await prisma.toolUse.findMany({
+    where: {
+      sessionId: id,
+      toolName: { in: ['Write', 'Edit', 'MultiEdit', 'NotebookEdit'] },
+    },
+    select: { id: true, turnId: true, toolName: true, toolInputSummary: true },
+    orderBy: { id: 'asc' },
+  });
+
+  // Build turn-level file changes:
+  // 1. Use direct turn.fileChanges if available (turn_id linked)
+  // 2. Otherwise, infer from session-level tool_uses ordered by ID
+  //    (tool_uses without turn_id are distributed to turns by sequence)
+  const unlinkedToolUses = fileToolUses.filter(tu => tu.turnId === null);
+  let unlinkedIdx = 0;
+  const turnCount = session.turns.length;
+
+  // Estimate how many unlinked tool_uses per turn
+  // Strategy: distribute evenly, or use tool_use ordering heuristic
+  // Since tool_uses and turns are both ordered by sequence, we split
+  // unlinked tool_uses proportionally across turns
+  const perTurnEstimate = turnCount > 0 ? Math.ceil(unlinkedToolUses.length / turnCount) : 0;
+
+  const enrichedTurns = session.turns.map((turn, tidx) => {
+    // Already has turn-level file changes from DB
+    if (turn.fileChanges.length > 0) return turn;
+
+    // Also check if turn has linked toolUses
+    if (turn.toolUses.length > 0) {
+      // Infer from turn's own tool uses
+      const inferred: { filePath: string; operation: string }[] = [];
+      for (const tu of turn.toolUses) {
+        if (/^(Write|Edit|MultiEdit|NotebookEdit)$/i.test(tu.toolName) && tu.toolInputSummary) {
+          const fp = tu.toolInputSummary.split(/\s/)[0].trim();
+          if (fp) inferred.push({ filePath: fp, operation: tu.toolName.toLowerCase() });
+        }
+      }
+      if (inferred.length > 0) {
+        const seen = new Set<string>();
+        const unique = inferred.filter(f => {
+          const k = `${f.operation}:${f.filePath}`;
+          if (seen.has(k)) return false;
+          seen.add(k);
+          return true;
+        });
+        return { ...turn, fileChanges: unique };
+      }
+    }
+
+    // Assign a slice of unlinked tool_uses to this turn
+    const sliceEnd = Math.min(unlinkedIdx + perTurnEstimate, unlinkedToolUses.length);
+    const slice = unlinkedToolUses.slice(unlinkedIdx, sliceEnd);
+    unlinkedIdx = sliceEnd;
+
+    const inferred: { filePath: string; operation: string }[] = [];
+    for (const tu of slice) {
+      if (tu.toolInputSummary) {
+        const fp = tu.toolInputSummary.split(/\s/)[0].trim();
+        if (fp) inferred.push({ filePath: fp, operation: tu.toolName.toLowerCase() });
+      }
+    }
+    const seen = new Set<string>();
+    const unique = inferred.filter(f => {
+      const k = `${f.operation}:${f.filePath}`;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+
+    return { ...turn, fileChanges: unique };
+  });
+
+  // Session-level: unlinked file changes (for summary display)
+  const sessionFileChanges = allFileChanges
+    .filter(fc => fc.turnId === null)
+    .map(fc => ({ filePath: fc.filePath, operation: fc.operation }));
+
   return {
     ...session,
+    turns: enrichedTurns,
     turnCount: actualTurnCount,
     summary: session.summary,
+    sessionFileChanges,
   };
 }
 
@@ -725,7 +818,9 @@ export async function getRepoDetail(repo: string, filters: DashboardFilters) {
 
   // Members for this repo (always need member join)
   const memberParams: any[] = [];
-  const memberConditions: string[] = [];
+  const memberConditions: string[] = [
+    '(SELECT COUNT(*) FROM turns t WHERE t.session_id = s.id) > 0',
+  ];
 
   if (filters.from) {
     memberConditions.push('s.started_at >= ?');
@@ -742,9 +837,7 @@ export async function getRepoDetail(repo: string, filters: DashboardFilters) {
     memberParams.push(filters.member);
   }
 
-  const memberWhereClause = memberConditions.length > 0
-    ? 'WHERE ' + memberConditions.join(' AND ')
-    : '';
+  const memberWhereClause = 'WHERE ' + memberConditions.join(' AND ');
 
   const memberSql = `
     SELECT
@@ -957,13 +1050,13 @@ export async function getFilterOptions() {
       orderBy: { gitEmail: 'asc' },
     }),
     prisma.session.findMany({
-      where: { gitRepo: { not: null } },
+      where: { gitRepo: { not: null }, turns: { some: {} } },
       select: { gitRepo: true },
       distinct: ['gitRepo'],
       orderBy: { gitRepo: 'asc' },
     }),
     prisma.session.findMany({
-      where: { model: { not: null } },
+      where: { model: { not: null }, turns: { some: {} } },
       select: { model: true },
       distinct: ['model'],
       orderBy: { model: 'asc' },
@@ -1132,26 +1225,8 @@ export async function getPromptFeed(
     };
   }
 
-  const sessionWhere: any = {};
-  if (filters.from) {
-    sessionWhere.startedAt = { ...(sessionWhere.startedAt || {}), gte: new Date(filters.from) };
-  }
-  if (filters.to) {
-    sessionWhere.startedAt = { ...(sessionWhere.startedAt || {}), lte: new Date(filters.to + 'T23:59:59Z') };
-  }
-  if (filters.member) {
-    sessionWhere.member = { gitEmail: filters.member };
-  }
-  if (filters.repo) {
-    sessionWhere.gitRepo = filters.repo;
-  }
-  if (filters.model) {
-    sessionWhere.model = filters.model;
-  }
-
-  if (Object.keys(sessionWhere).length > 0) {
-    turnWhere.session = sessionWhere;
-  }
+  const sessionWhere = buildSessionWhere(filters);
+  turnWhere.session = sessionWhere;
 
   const turns = await prisma.turn.findMany({
     where: turnWhere,

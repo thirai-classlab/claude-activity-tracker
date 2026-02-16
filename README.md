@@ -470,6 +470,9 @@ pm2 startup && pm2 save
 | `COST_SONNET_OUTPUT` | - | `15` | Sonnet 出力単価 |
 | `COST_HAIKU_INPUT` | - | `0.80` | Haiku 入力単価 |
 | `COST_HAIKU_OUTPUT` | - | `4` | Haiku 出力単価 |
+| `ANTHROPIC_API_KEY` | AI機能: いずれか1つ | なし | Anthropic API キー。AI チャット・分析機能に必要 |
+| `CLAUDE_CODE_OAUTH_TOKEN` | AI機能: いずれか1つ | なし | Claude Code OAuth トークン。`claude setup-token` で生成 |
+| `GITHUB_PAT` | - | なし（未設定時はスキップ） | GitHub Fine-grained PAT。AI チャットでリポジトリ内容を参照可能にする。Contents (Read-only) 権限が必要 |
 
 ---
 
