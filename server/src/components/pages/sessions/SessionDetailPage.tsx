@@ -496,61 +496,50 @@ function TurnCard({
           {turn.durationMs != null && (
             <span className="turn-meta-item">{formatDuration(turn.durationMs)}</span>
           )}
-          {combinedTokens > 0 && (
-            <span className="turn-meta-item">{formatCompact(combinedTokens)} tokens</span>
+          {turn.model && <ModelBadge model={turn.model} />}
+          {turn.stopReason && (
+            <span className="turn-stop-reason">{turn.stopReason}</span>
           )}
         </div>
       </div>
 
-      {/* Token summary */}
-      {combinedTokens > 0 && (
-        <div className="turn-token-summary" style={{
-          display: 'flex',
-          gap: '12px',
-          flexWrap: 'wrap',
-          fontSize: '12px',
-          padding: '6px 10px',
-          background: 'var(--bg-secondary, rgba(0,0,0,0.03))',
-          borderRadius: '4px',
-          margin: '4px 0 8px 0',
-        }}>
+      {/* Token row — always shown, uniform position */}
+      <div className="turn-token-row" style={{
+        display: 'flex',
+        gap: '12px',
+        flexWrap: 'wrap',
+        fontSize: '12px',
+        padding: '4px 10px',
+        background: 'var(--bg-secondary, rgba(0,0,0,0.03))',
+        borderRadius: '4px',
+        margin: '4px 0 8px 0',
+      }}>
+        <span style={{ color: 'var(--text-secondary)' }}>
+          入力: <strong>{formatCompact(turn.inputTokens)}</strong>
+        </span>
+        <span style={{ color: 'var(--text-secondary)' }}>
+          出力: <strong>{formatCompact(turn.outputTokens)}</strong>
+        </span>
+        {turn.cacheReadTokens > 0 && (
           <span style={{ color: 'var(--text-secondary)' }}>
-            メイン: <strong>{formatCompact(mainTokens)}</strong>
+            キャッシュ読取: <strong>{formatCompact(turn.cacheReadTokens)}</strong>
           </span>
-          {subagentTokens > 0 && (
-            <span style={{ color: 'var(--text-secondary)' }}>
-              サブエージェント: <strong>{formatCompact(subagentTokens)}</strong>
-            </span>
-          )}
-          {subagentTokens > 0 && (
-            <span style={{ color: 'var(--text-primary, var(--text-secondary))' }}>
-              合計: <strong>{formatCompact(combinedTokens)}</strong>
-            </span>
-          )}
-        </div>
-      )}
+        )}
+        {subagentTokens > 0 && (
+          <span style={{ color: 'var(--text-secondary)' }}>
+            サブエージェント: <strong>{formatCompact(subagentTokens)}</strong>
+          </span>
+        )}
+        <span style={{ color: 'var(--text-primary, var(--text-secondary))' }}>
+          合計: <strong>{formatCompact(combinedTokens)}</strong>
+        </span>
+      </div>
 
       {/* Prompt text */}
       {turn.promptText && (
         <div className="turn-prompt">
           <div className="turn-prompt-label">プロンプト</div>
           <div className="turn-prompt-text">{turn.promptText}</div>
-        </div>
-      )}
-
-      {/* Model & Stop reason */}
-      <div className="turn-info-row">
-        {turn.model && <ModelBadge model={turn.model} />}
-        {turn.stopReason && (
-          <span className="turn-stop-reason">{turn.stopReason}</span>
-        )}
-      </div>
-
-      {/* Token breakdown */}
-      {mainTokens > 0 && (
-        <div className="turn-token-row">
-          <span>入力: {formatCompact(turn.inputTokens)}</span>
-          <span>出力: {formatCompact(turn.outputTokens)}</span>
         </div>
       )}
 
