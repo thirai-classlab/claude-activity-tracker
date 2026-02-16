@@ -452,7 +452,7 @@ export async function getSessions(filters: DashboardFilters, page = 1, perPage =
   const [data, total] = await Promise.all([
     prisma.session.findMany({
       where: nonStubWhere,
-      orderBy: { startedAt: 'desc' },
+      orderBy: [{ endedAt: 'desc' }, { startedAt: 'desc' }],
       skip: (safePage - 1) * safePerPage,
       take: safePerPage,
       select: {

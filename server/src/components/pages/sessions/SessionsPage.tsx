@@ -87,10 +87,10 @@ export function SessionsPage() {
     },
     {
       key: 'time',
-      header: '日時',
+      header: '最終更新日',
       render: (item: typeof sessionData[number]) => (
         <span style={{ fontSize: '12px', whiteSpace: 'nowrap', color: 'var(--text-muted)' }}>
-          {formatDateShort(item.startedAt)}
+          {formatDateShort(item.endedAt || item.startedAt)}
         </span>
       ),
     },
