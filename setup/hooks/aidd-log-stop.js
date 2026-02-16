@@ -45,11 +45,10 @@ const debug = createDebugger(hookDir, config, 'Stop');
   const claudeAccount = getClaudeEmail(hookDir, config);
   const ipAddress = await getIpAddress();
 
-  // Summary text (join all summaries, take first 1000 chars)
+  // Summary text: summaries > firstPrompt
   let summary = parsed.summaries.join('\n').substring(0, 1000);
   if (!summary) {
-    const lastPrompt = readTmpFile(tmpDir, 'last_prompt.txt') || '';
-    summary = lastPrompt.replace(/\n/g, ' ').substring(0, 500);
+    summary = (parsed.firstPrompt || '').replace(/\n/g, ' ').substring(0, 500);
   }
 
   // Session events from turn durations
