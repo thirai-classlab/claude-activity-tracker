@@ -18,6 +18,7 @@ import {
   shortRepo,
   truncate,
 } from '@/lib/formatters';
+import { totalTokens } from '@/lib/tokenUtils';
 import type { TurnDetail, ToolUseDetail, SubagentDetail, FileChangeDetail } from '@/lib/types';
 
 // ---------------------------------------------------------------------------
@@ -95,7 +96,7 @@ function ToolUseRow({ tool, isLast }: { tool: ToolUseDetail; isLast: boolean }) 
 }
 
 function SubagentBlock({ sub }: { sub: SubagentDetail }) {
-  const totalTokens = sub.inputTokens + sub.outputTokens;
+  const subTotalTokens = totalTokens(sub);
   return (
     <div className="turn-subagent">
       <div className="turn-subagent-header">
@@ -111,7 +112,7 @@ function SubagentBlock({ sub }: { sub: SubagentDetail }) {
       {sub.description && (
         <div className="turn-subagent-desc">{truncate(sub.description, 100)}</div>
       )}
-      {totalTokens > 0 && (
+      {subTotalTokens > 0 && (
         <div className="turn-token-row">
           <span>入力: {formatCompact(sub.inputTokens)}</span>
           <span>出力: {formatCompact(sub.outputTokens)}</span>
@@ -164,13 +165,13 @@ function FileChangesBlock({ files }: { files: FileChangeDetail[] }) {
 }
 
 function TurnCard({ turn, isLast }: { turn: TurnDetail; isLast: boolean }) {
-  const mainTokens = turn.inputTokens + turn.outputTokens;
+  const mainTokens = totalTokens(turn);
   const mainToolUses = turn.toolUses || [];
   const fileChanges = turn.fileChanges || [];
   const subagents = turn.subagents || [];
 
   const subagentTokens = subagents.reduce(
-    (sum, s) => sum + s.inputTokens + s.outputTokens,
+    (sum, s) => sum + totalTokens(s),
     0
   );
   const combinedTokens = mainTokens + subagentTokens;

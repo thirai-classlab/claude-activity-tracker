@@ -21,6 +21,7 @@ import {
   shortRepo,
   truncate,
 } from '@/lib/formatters';
+import { totalTokens as calcTotalTokens } from '@/lib/tokenUtils';
 import type { SessionItem, RepoDetailResponse } from '@/lib/types';
 import { ChevronDown, ChevronRight, GitBranch, ExternalLink } from 'lucide-react';
 
@@ -45,7 +46,7 @@ export function RepoDetailPage({ repoId }: RepoDetailPageProps) {
   const d = detail.data;
   const repoInfo = repos.data?.find(r => r.gitRepo === repo);
   const totalTokens = repoInfo
-    ? repoInfo.totalInputTokens + repoInfo.totalOutputTokens
+    ? calcTotalTokens(repoInfo)
     : 0;
   const estimatedCost = repoInfo?.estimatedCost || 0;
 
@@ -84,7 +85,7 @@ export function RepoDetailPage({ repoId }: RepoDetailPageProps) {
       align: 'right' as const,
       render: (item: SessionItem) => (
         <span className="font-mono" style={{ fontSize: '12px' }}>
-          {formatCompact(item.totalInputTokens + item.totalOutputTokens)}
+          {formatCompact(calcTotalTokens(item))}
         </span>
       ),
     },
@@ -265,7 +266,7 @@ export function RepoDetailPage({ repoId }: RepoDetailPageProps) {
                           {formatNumber(branch.sessionCount)} セッション
                         </span>
                         <span className="branch-stat">
-                          {formatCompact(branch.totalInputTokens + branch.totalOutputTokens)} トークン
+                          {formatCompact(calcTotalTokens(branch))} トークン
                         </span>
                       </div>
                     </button>

@@ -4,6 +4,7 @@ import { Line } from 'react-chartjs-2';
 import type { DailyStatsItem } from '@/lib/types';
 import { COLORS } from '@/lib/constants';
 import { formatCompact } from '@/lib/formatters';
+import { totalTokens } from '@/lib/tokenUtils';
 import './ChartSetup';
 
 interface WeeklyTrendChartProps {
@@ -15,7 +16,7 @@ export function WeeklyTrendChart({ data, metric }: WeeklyTrendChartProps) {
   const getValue = (d: DailyStatsItem) => {
     switch (metric) {
       case 'sessions': return d.sessionCount;
-      case 'tokens': return d.totalInputTokens + d.totalOutputTokens;
+      case 'tokens': return totalTokens(d);
       case 'cost': return d.estimatedCost;
     }
   };

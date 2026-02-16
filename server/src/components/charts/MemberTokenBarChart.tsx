@@ -29,6 +29,18 @@ export function MemberTokenBarChart({ data, limit = 10 }: MemberTokenBarChartPro
         backgroundColor: COLORS.opus + 'cc',
         borderRadius: 3,
       },
+      {
+        label: 'Cache作成',
+        data: sorted.map(m => m.totalCacheCreationTokens ?? 0),
+        backgroundColor: COLORS.warning + 'cc',
+        borderRadius: 3,
+      },
+      {
+        label: 'Cache読取',
+        data: sorted.map(m => m.totalCacheReadTokens ?? 0),
+        backgroundColor: COLORS.success + 'cc',
+        borderRadius: 3,
+      },
     ],
   };
 

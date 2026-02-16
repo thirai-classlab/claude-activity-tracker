@@ -15,6 +15,7 @@ import { SessionScatterChart } from '@/components/charts/ScatterChart';
 import { useFilters } from '@/hooks/useFilters';
 import { useStats, useSessions } from '@/hooks/useApi';
 import { formatNumber, formatCompact, formatDateShort, formatSessionDuration, truncate, shortRepo } from '@/lib/formatters';
+import { totalTokens } from '@/lib/tokenUtils';
 import { classifySessions, getClassificationSummary } from '@/lib/session-classifier';
 
 export function SessionsPage() {
@@ -56,7 +57,7 @@ export function SessionsPage() {
       align: 'right' as const,
       render: (item: typeof sessionData[number]) => (
         <span style={{ fontFamily: 'monospace' }}>
-          {formatCompact(item.totalInputTokens + item.totalOutputTokens)}
+          {formatCompact(totalTokens(item))}
         </span>
       ),
     },
@@ -106,7 +107,7 @@ export function SessionsPage() {
         <KpiGrid>
           <KpiCard label="マイセッション" value={formatNumber(s?.totalSessions || 0)} color="blue" />
           <KpiCard label="平均ターン数" value={String(s?.averageTurnsPerSession || 0)} color="green" />
-          <KpiCard label="マイトークン" value={formatCompact((s?.totalInputTokens || 0) + (s?.totalOutputTokens || 0))} color="purple" />
+          <KpiCard label="マイトークン" value={formatCompact(totalTokens(s || {}))} color="purple" />
           <KpiCard label="総ツール使用" value={formatNumber(s?.totalToolUses || 0)} color="amber" />
         </KpiGrid>
 

@@ -16,6 +16,7 @@ import { MatrixHeatmap } from '@/components/charts/MatrixHeatmap';
 import { useFilters } from '@/hooks/useFilters';
 import { useMemberStats, useStats, useMemberDateHeatmap, useProductivityMetrics } from '@/hooks/useApi';
 import { formatCost, formatNumber, formatCompact, formatDateShort } from '@/lib/formatters';
+import { totalTokens as calcTotalTokens } from '@/lib/tokenUtils';
 import type { MemberStatsItem, MemberDateHeatmapItem, ProductivityMetricsItem } from '@/lib/types';
 
 // ---------------------------------------------------------------------------
@@ -131,7 +132,7 @@ export function MembersPage() {
   const heatmapData = heatmap.data || [];
 
   // Total tokens for KPI
-  const totalTokens = (s?.totalInputTokens || 0) + (s?.totalOutputTokens || 0);
+  const totalTokens = calcTotalTokens(s || {});
 
   // CSV export columns
   const csvColumns: { key: keyof MemberStatsItem; header: string }[] = [
@@ -175,7 +176,7 @@ export function MembersPage() {
       header: 'トークン',
       align: 'right' as const,
       render: (m: MemberStatsItem) => (
-        <TokenBreakdown input={m.totalInputTokens} output={m.totalOutputTokens} compact />
+        <TokenBreakdown input={m.totalInputTokens} output={m.totalOutputTokens} cacheCreation={m.totalCacheCreationTokens} cacheRead={m.totalCacheReadTokens} compact />
       ),
     },
     {

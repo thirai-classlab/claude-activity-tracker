@@ -13,6 +13,7 @@ import { ErrorDisplay } from '@/components/shared/ErrorDisplay';
 import { NoData } from '@/components/shared/NoData';
 import { usePromptFeed } from '@/hooks/useApi';
 import { formatCompact, shortRepo, truncate } from '@/lib/formatters';
+import { totalTokens } from '@/lib/tokenUtils';
 import type { PromptFeedItem } from '@/lib/types';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -223,7 +224,7 @@ export function PromptFeedPage() {
   const handleDotLeave = () => setTooltip(null);
 
   const getDotSize = useCallback((item: PromptFeedItem) => {
-    const tokens = item.inputTokens + item.outputTokens;
+    const tokens = totalTokens(item);
     if (tokens > 50000) return 14;
     if (tokens > 10000) return 11;
     if (tokens > 1000) return 9;
@@ -573,7 +574,7 @@ export function PromptFeedPage() {
             {truncate(tooltip.item.promptText || '', 120)}
           </div>
           <div className="tl-tooltip-meta">
-            <span>{formatCompact(tooltip.item.inputTokens + tooltip.item.outputTokens)} tokens</span>
+            <span>{formatCompact(totalTokens(tooltip.item))} tokens</span>
             {tooltip.item.toolCount > 0 && <span>{tooltip.item.toolCount} tools</span>}
           </div>
         </div>

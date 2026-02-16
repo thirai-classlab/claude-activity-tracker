@@ -318,10 +318,20 @@ export async function handleStop(data: {
     cacheReadTokens: data.total_cache_read_tokens || 0,
   });
 
-  // Count subagents for this session
+  // Count and aggregate subagent tokens/cost for this session
   const subagentCount = await prisma.subagent.count({ where: { sessionId } });
+  const subAgg = await prisma.subagent.aggregate({
+    where: { sessionId },
+    _sum: {
+      inputTokens: true,
+      outputTokens: true,
+      cacheCreationTokens: true,
+      cacheReadTokens: true,
+      estimatedCost: true,
+    },
+  });
 
-  // Update session with aggregated data
+  // Update session with aggregated data (main agent + subagent tokens)
   await prisma.session.update({
     where: { id: sessionId },
     data: {
@@ -330,11 +340,11 @@ export async function handleStop(data: {
       ...(data.git_repo ? { gitRepo: data.git_repo } : {}),
       ...(data.git_branch ? { gitBranch: data.git_branch } : {}),
       ...(data.ip_address ? { ipAddress: data.ip_address } : {}),
-      totalInputTokens: data.total_input_tokens || 0,
-      totalOutputTokens: data.total_output_tokens || 0,
-      totalCacheCreationTokens: data.total_cache_creation_tokens || 0,
-      totalCacheReadTokens: data.total_cache_read_tokens || 0,
-      estimatedCost: cost,
+      totalInputTokens: (data.total_input_tokens || 0) + (subAgg._sum.inputTokens ?? 0),
+      totalOutputTokens: (data.total_output_tokens || 0) + (subAgg._sum.outputTokens ?? 0),
+      totalCacheCreationTokens: (data.total_cache_creation_tokens || 0) + (subAgg._sum.cacheCreationTokens ?? 0),
+      totalCacheReadTokens: (data.total_cache_read_tokens || 0) + (subAgg._sum.cacheReadTokens ?? 0),
+      estimatedCost: cost + (subAgg._sum.estimatedCost ?? 0),
       turnCount: data.turn_count || 0,
       toolUseCount: data.tool_use_count || 0,
       subagentCount,

@@ -14,6 +14,7 @@ import { ModelSimulationTable } from './ModelSimulationTable';
 import { useFilters } from '@/hooks/useFilters';
 import { useStats, useDailyStats, useCostStats, useMemberStats } from '@/hooks/useApi';
 import { formatCompact, formatCost, formatNumber } from '@/lib/formatters';
+import { totalTokens as calcTotalTokens } from '@/lib/tokenUtils';
 import { COST_RATES } from '@/lib/constants';
 
 export function TokensPage() {
@@ -28,7 +29,7 @@ export function TokensPage() {
   if (!stats.data) return null;
 
   const s = stats.data;
-  const totalTokens = s.totalInputTokens + s.totalOutputTokens;
+  const totalTokens = calcTotalTokens(s);
 
   // Model breakdown from cost stats
   const modelMap = new Map<string, number>();
@@ -57,6 +58,8 @@ export function TokensPage() {
                 { key: 'displayName', header: '名前' },
                 { key: 'totalInputTokens', header: '入力トークン' },
                 { key: 'totalOutputTokens', header: '出力トークン' },
+                { key: 'totalCacheCreationTokens', header: 'Cache作成トークン' },
+                { key: 'totalCacheReadTokens', header: 'Cache読取トークン' },
                 { key: 'estimatedCost', header: 'コスト' },
               ]}
               filename="token-analysis.csv"
@@ -66,7 +69,7 @@ export function TokensPage() {
       />
       <div className="page-body">
         <KpiGrid>
-          <KpiCard label="総トークン" value={formatCompact(totalTokens)} color="purple" />
+          <KpiCard label="総トークン" value={formatCompact(totalTokens)} sub={`Cache効率 ${((s.cacheEfficiency) * 100).toFixed(0)}%`} color="purple" />
           <KpiCard label="入力トークン" value={formatCompact(s.totalInputTokens)} sub={`全体の${((s.totalInputTokens / Math.max(totalTokens, 1)) * 100).toFixed(0)}%`} color="blue" />
           <KpiCard label="出力トークン" value={formatCompact(s.totalOutputTokens)} sub={`全体の${((s.totalOutputTokens / Math.max(totalTokens, 1)) * 100).toFixed(0)}%`} color="green" />
           <KpiCard label="推定コスト" value={formatCost(s.totalCost)} sub={`平均 ${formatCost(s.averageCostPerSession)}/セッション`} color="amber" />

@@ -410,7 +410,7 @@
 
     // KPI
     fetchApi('/stats').then(function (d) {
-      var totalTokens = (d.totalInputTokens || 0) + (d.totalOutputTokens || 0) + (d.totalCacheReadTokens || 0);
+      var totalTokens = (d.totalInputTokens || 0) + (d.totalOutputTokens || 0) + (d.totalCacheCreationTokens || 0) + (d.totalCacheReadTokens || 0);
       var errorRate = d.totalToolUses > 0 ? ((d.toolErrorCount || d.errorCount || 0) / d.totalToolUses * 100) : 0;
       el('dash-kpi').innerHTML =
         kpiCard('blue', 'TK', formatCompact(totalTokens), '月間トークン消費量', '') +
@@ -475,8 +475,8 @@
       destroyChart('dash-members');
       if (!data || !data.length) return;
       var sorted = data.slice().sort(function (a, b) {
-        var at = (p(a, 'totalInputTokens', 'total_input_tokens') || 0) + (p(a, 'totalOutputTokens', 'total_output_tokens') || 0);
-        var bt = (p(b, 'totalInputTokens', 'total_input_tokens') || 0) + (p(b, 'totalOutputTokens', 'total_output_tokens') || 0);
+        var at = (p(a, 'totalInputTokens', 'total_input_tokens') || 0) + (p(a, 'totalOutputTokens', 'total_output_tokens') || 0) + (p(a, 'totalCacheCreationTokens', 'total_cache_creation_tokens') || 0) + (p(a, 'totalCacheReadTokens', 'total_cache_read_tokens') || 0);
+        var bt = (p(b, 'totalInputTokens', 'total_input_tokens') || 0) + (p(b, 'totalOutputTokens', 'total_output_tokens') || 0) + (p(b, 'totalCacheCreationTokens', 'total_cache_creation_tokens') || 0) + (p(b, 'totalCacheReadTokens', 'total_cache_read_tokens') || 0);
         return bt - at;
       });
       var top5 = sorted.slice(0, 5);
@@ -487,7 +487,7 @@
           datasets: [{
             label: 'トークン',
             data: top5.map(function (d) {
-              return (p(d, 'totalInputTokens', 'total_input_tokens') || 0) + (p(d, 'totalOutputTokens', 'total_output_tokens') || 0);
+              return (p(d, 'totalInputTokens', 'total_input_tokens') || 0) + (p(d, 'totalOutputTokens', 'total_output_tokens') || 0) + (p(d, 'totalCacheCreationTokens', 'total_cache_creation_tokens') || 0) + (p(d, 'totalCacheReadTokens', 'total_cache_read_tokens') || 0);
             }),
             backgroundColor: COLORS.primary, borderRadius: 3,
           }],
@@ -927,8 +927,8 @@
     fetchApi('/members').then(function (data) {
       if (!data || !data.length) { showNoData('tok-member-table'); return; }
       var sorted = data.slice().sort(function (a, b) {
-        var at = (p(a, 'totalInputTokens', 'total_input_tokens') || 0) + (p(a, 'totalOutputTokens', 'total_output_tokens') || 0);
-        var bt = (p(b, 'totalInputTokens', 'total_input_tokens') || 0) + (p(b, 'totalOutputTokens', 'total_output_tokens') || 0);
+        var at = (p(a, 'totalInputTokens', 'total_input_tokens') || 0) + (p(a, 'totalOutputTokens', 'total_output_tokens') || 0) + (p(a, 'totalCacheCreationTokens', 'total_cache_creation_tokens') || 0) + (p(a, 'totalCacheReadTokens', 'total_cache_read_tokens') || 0);
+        var bt = (p(b, 'totalInputTokens', 'total_input_tokens') || 0) + (p(b, 'totalOutputTokens', 'total_output_tokens') || 0) + (p(b, 'totalCacheCreationTokens', 'total_cache_creation_tokens') || 0) + (p(b, 'totalCacheReadTokens', 'total_cache_read_tokens') || 0);
         return bt - at;
       });
       var html = '<table class="data-table"><thead><tr>' +
@@ -962,8 +962,8 @@
       if (!data.length) { showNoData('tok-top-sessions'); return; }
       // Sort by total tokens descending
       var sorted = data.slice().sort(function (a, b) {
-        var at = (p(a, 'totalInputTokens', 'total_input_tokens') || 0) + (p(a, 'totalOutputTokens', 'total_output_tokens') || 0);
-        var bt = (p(b, 'totalInputTokens', 'total_input_tokens') || 0) + (p(b, 'totalOutputTokens', 'total_output_tokens') || 0);
+        var at = (p(a, 'totalInputTokens', 'total_input_tokens') || 0) + (p(a, 'totalOutputTokens', 'total_output_tokens') || 0) + (p(a, 'totalCacheCreationTokens', 'total_cache_creation_tokens') || 0) + (p(a, 'totalCacheReadTokens', 'total_cache_read_tokens') || 0);
+        var bt = (p(b, 'totalInputTokens', 'total_input_tokens') || 0) + (p(b, 'totalOutputTokens', 'total_output_tokens') || 0) + (p(b, 'totalCacheCreationTokens', 'total_cache_creation_tokens') || 0) + (p(b, 'totalCacheReadTokens', 'total_cache_read_tokens') || 0);
         return bt - at;
       }).slice(0, 10);
       var html = '<table class="data-table"><thead><tr>' +
@@ -1057,7 +1057,7 @@
     data.forEach(function (m) {
       var memberId = p(m, 'gitEmail', 'git_email') || '';
       var isSelected = expandedMember === memberId;
-      var totalTokens = (p(m, 'totalInputTokens', 'total_input_tokens') || 0) + (p(m, 'totalOutputTokens', 'total_output_tokens') || 0);
+      var totalTokens = (p(m, 'totalInputTokens', 'total_input_tokens') || 0) + (p(m, 'totalOutputTokens', 'total_output_tokens') || 0) + (p(m, 'totalCacheCreationTokens', 'total_cache_creation_tokens') || 0) + (p(m, 'totalCacheReadTokens', 'total_cache_read_tokens') || 0);
       var errRate = p(m, 'errorRate', 'error_rate') || 0;
       var errBadge = errRate > 5 ? 'badge-danger' : errRate > 3 ? 'badge-warning' : 'badge-success';
       html += '<tr class="' + (isSelected ? 'row-selected' : '') + ' clickable-row" data-member="' + escapeHtml(memberId) + '">' +
@@ -1226,7 +1226,7 @@
     Promise.all([fetchApi('/stats'), fetchApi('/repos')]).then(function (results) {
       var stats = results[0];
       var repos = results[1] || [];
-      var totalTokens = (stats.totalInputTokens || 0) + (stats.totalOutputTokens || 0);
+      var totalTokens = (stats.totalInputTokens || 0) + (stats.totalOutputTokens || 0) + (stats.totalCacheCreationTokens || 0) + (stats.totalCacheReadTokens || 0);
       el('repo-kpi').innerHTML =
         kpiCard('blue', 'RP', String(stats.repoCount || repos.length || 0), 'リポジトリ数', '') +
         kpiCard('purple', 'SS', formatNumber(stats.totalSessions || 0), '総セッション', '') +
@@ -1250,7 +1250,7 @@
     data.forEach(function (r) {
       var repoId = p(r, 'gitRepo', 'git_repo') || '';
       var isSelected = expandedRepo === repoId;
-      var totalTokens = (p(r, 'totalInputTokens', 'total_input_tokens') || 0) + (p(r, 'totalOutputTokens', 'total_output_tokens') || 0);
+      var totalTokens = (p(r, 'totalInputTokens', 'total_input_tokens') || 0) + (p(r, 'totalOutputTokens', 'total_output_tokens') || 0) + (p(r, 'totalCacheCreationTokens', 'total_cache_creation_tokens') || 0) + (p(r, 'totalCacheReadTokens', 'total_cache_read_tokens') || 0);
       html += '<tr class="' + (isSelected ? 'row-selected' : '') + ' clickable-row" data-repo="' + escapeHtml(repoId) + '">' +
         '<td><strong>' + escapeHtml(shortRepo(repoId)) + '</strong><div style="font-size:11px;color:var(--text-muted);">' + escapeHtml(repoId) + '</div></td>' +
         '<td class="text-right font-mono">' + formatNumber(p(r, 'sessionCount', 'session_count') || 0) + '</td>' +
@@ -1305,7 +1305,7 @@
           '<th>ブランチ名</th><th class="text-right">セッション数</th><th class="text-right">トークン合計</th>' +
           '</tr></thead><tbody>';
         branches.forEach(function (b) {
-          var bTokens = (p(b, 'totalInputTokens', 'total_input_tokens') || 0) + (p(b, 'totalOutputTokens', 'total_output_tokens') || 0);
+          var bTokens = (p(b, 'totalInputTokens', 'total_input_tokens') || 0) + (p(b, 'totalOutputTokens', 'total_output_tokens') || 0) + (p(b, 'totalCacheCreationTokens', 'total_cache_creation_tokens') || 0) + (p(b, 'totalCacheReadTokens', 'total_cache_read_tokens') || 0);
           html += '<tr><td><span class="branch-name">' + escapeHtml(b.branch || p(b, 'gitBranch', 'git_branch') || '') + '</span></td>' +
             '<td class="text-right font-mono">' + formatNumber(p(b, 'sessionCount', 'session_count') || 0) + '</td>' +
             '<td class="text-right font-mono">' + formatNumber(bTokens) + '</td></tr>';
@@ -1871,6 +1871,8 @@
         ? Math.round((new Date(endedAt) - new Date(startedAt)) / 1000) : null;
       var inputTokens = p(s, 'totalInputTokens', 'total_input_tokens') || 0;
       var outputTokens = p(s, 'totalOutputTokens', 'total_output_tokens') || 0;
+      var cacheCreationTokens = p(s, 'totalCacheCreationTokens', 'total_cache_creation_tokens') || 0;
+      var cacheReadTokens = p(s, 'totalCacheReadTokens', 'total_cache_read_tokens') || 0;
       var turnCount = p(s, 'turnCount', 'turn_count') || 0;
       var toolUseCount = p(s, 'toolUseCount', 'tool_use_count') || 0;
       var titleInfo = getSessionTitle(s);
@@ -1893,7 +1895,7 @@
       // KPI row
       html += '<div class="sidebar-kpi">' +
         '<div class="sidebar-kpi-item"><div class="sidebar-kpi-value">' + (durationSec ? formatDuration(durationSec) : '-') + '</div><div class="sidebar-kpi-label">所要時間</div></div>' +
-        '<div class="sidebar-kpi-item"><div class="sidebar-kpi-value">' + formatCompact(inputTokens + outputTokens) + '</div><div class="sidebar-kpi-label">トークン</div></div>' +
+        '<div class="sidebar-kpi-item"><div class="sidebar-kpi-value">' + formatCompact(inputTokens + outputTokens + cacheCreationTokens + cacheReadTokens) + '</div><div class="sidebar-kpi-label">トークン</div></div>' +
         '<div class="sidebar-kpi-item"><div class="sidebar-kpi-value">' + turnCount + '</div><div class="sidebar-kpi-label">ターン</div></div>' +
         '<div class="sidebar-kpi-item"><div class="sidebar-kpi-value">' + toolUseCount + '</div><div class="sidebar-kpi-label">ツール</div></div>' +
       '</div>';
@@ -2082,6 +2084,8 @@
       var durationSec = startedAt && endedAt ? Math.round((new Date(endedAt) - new Date(startedAt)) / 1000) : null;
       var inputTokens = p(s, 'totalInputTokens', 'total_input_tokens') || 0;
       var outputTokens = p(s, 'totalOutputTokens', 'total_output_tokens') || 0;
+      var cacheCreationTokens = p(s, 'totalCacheCreationTokens', 'total_cache_creation_tokens') || 0;
+      var cacheReadTokens = p(s, 'totalCacheReadTokens', 'total_cache_read_tokens') || 0;
       var turnCount = p(s, 'turnCount', 'turn_count') || 0;
       var toolUseCount = p(s, 'toolUseCount', 'tool_use_count') || 0;
       var titleInfo = getSessionTitle(s);
@@ -2103,7 +2107,7 @@
           '</div>' +
           '<div class="sidebar-kpi" style="margin-bottom:12px;">' +
             '<div class="sidebar-kpi-item"><div class="sidebar-kpi-value">' + (durationSec ? formatDuration(durationSec) : '-') + '</div><div class="sidebar-kpi-label">所要時間</div></div>' +
-            '<div class="sidebar-kpi-item"><div class="sidebar-kpi-value">' + formatCompact(inputTokens + outputTokens) + '</div><div class="sidebar-kpi-label">トークン</div></div>' +
+            '<div class="sidebar-kpi-item"><div class="sidebar-kpi-value">' + formatCompact(inputTokens + outputTokens + cacheCreationTokens + cacheReadTokens) + '</div><div class="sidebar-kpi-label">トークン</div></div>' +
             '<div class="sidebar-kpi-item"><div class="sidebar-kpi-value">' + turnCount + '</div><div class="sidebar-kpi-label">ターン</div></div>' +
             '<div class="sidebar-kpi-item"><div class="sidebar-kpi-value">' + toolUseCount + '</div><div class="sidebar-kpi-label">ツール</div></div>' +
           '</div>';

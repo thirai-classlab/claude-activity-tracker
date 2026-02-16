@@ -28,6 +28,7 @@ import {
 import { formatCompact, formatCost, formatNumber, shortRepo } from '@/lib/formatters';
 import { generateHints } from '@/lib/hints';
 import { splitWeeks, calcTrend } from '@/lib/trend';
+import { totalTokens } from '@/lib/tokenUtils';
 
 export function OverviewPage() {
   const [isChatOpen, setIsChatOpen] = useState(false);
@@ -51,8 +52,8 @@ export function OverviewPage() {
   const sessionTrend = weeks ? calcTrend(weeks.current.sessions, weeks.previous.sessions) : null;
   const costTrend = weeks ? calcTrend(weeks.current.cost, weeks.previous.cost) : null;
   const tokenTrend = weeks ? calcTrend(
-    weeks.current.inputTokens + weeks.current.outputTokens,
-    weeks.previous.inputTokens + weeks.previous.outputTokens,
+    totalTokens(weeks.current),
+    totalTokens(weeks.previous),
   ) : null;
 
   // Generate hints
@@ -107,8 +108,8 @@ export function OverviewPage() {
           />
           <KpiCard
             label="総トークン"
-            value={formatCompact(s.totalInputTokens + s.totalOutputTokens)}
-            sub={`平均 ${formatCompact((s.totalInputTokens + s.totalOutputTokens) / Math.max(s.totalSessions, 1))}/セッション`}
+            value={formatCompact(totalTokens(s))}
+            sub={`平均 ${formatCompact(totalTokens(s) / Math.max(s.totalSessions, 1))}/セッション`}
             color="purple"
             trend={tokenTrend ? { direction: tokenTrend.direction, label: tokenTrend.label, goodDirection: 'up' } : undefined}
           />

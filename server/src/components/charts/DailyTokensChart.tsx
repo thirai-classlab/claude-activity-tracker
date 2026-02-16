@@ -15,15 +15,27 @@ export function DailyTokensChart({ data }: DailyTokensChartProps) {
     labels: data.map(d => d.date),
     datasets: [
       {
-        label: 'Input Tokens',
+        label: 'Input',
         data: data.map(d => d.totalInputTokens),
         backgroundColor: COLORS.sonnet + 'cc',
         borderRadius: 3,
       },
       {
-        label: 'Output Tokens',
+        label: 'Output',
         data: data.map(d => d.totalOutputTokens),
         backgroundColor: COLORS.opus + 'cc',
+        borderRadius: 3,
+      },
+      {
+        label: 'Cache Creation',
+        data: data.map(d => d.totalCacheCreationTokens),
+        backgroundColor: COLORS.warning + 'cc',
+        borderRadius: 3,
+      },
+      {
+        label: 'Cache Read',
+        data: data.map(d => d.totalCacheReadTokens),
+        backgroundColor: COLORS.success + 'cc',
         borderRadius: 3,
       },
     ],

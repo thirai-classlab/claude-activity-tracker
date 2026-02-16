@@ -201,6 +201,8 @@ export async function getDailyStats(filters: DashboardFilters) {
       CAST(COUNT(*) AS DOUBLE) as sessionCount,
       CAST(COALESCE(SUM(s.total_input_tokens), 0) AS DOUBLE) as totalInputTokens,
       CAST(COALESCE(SUM(s.total_output_tokens), 0) AS DOUBLE) as totalOutputTokens,
+      CAST(COALESCE(SUM(s.total_cache_creation_tokens), 0) AS DOUBLE) as totalCacheCreationTokens,
+      CAST(COALESCE(SUM(s.total_cache_read_tokens), 0) AS DOUBLE) as totalCacheReadTokens,
       CAST(COALESCE(SUM(s.estimated_cost), 0.0) AS DOUBLE) as estimatedCost
     FROM sessions s
     ${joinClause}
@@ -216,6 +218,8 @@ export async function getDailyStats(filters: DashboardFilters) {
     sessionCount: Number(row.sessionCount),
     totalInputTokens: Number(row.totalInputTokens),
     totalOutputTokens: Number(row.totalOutputTokens),
+    totalCacheCreationTokens: Number(row.totalCacheCreationTokens),
+    totalCacheReadTokens: Number(row.totalCacheReadTokens),
     estimatedCost: Math.round(Number(row.estimatedCost) * 10000) / 10000,
   }));
 }
@@ -235,15 +239,11 @@ export async function getMemberStats(filters: DashboardFilters) {
       CAST(COUNT(*) AS DOUBLE) as sessionCount,
       CAST(COALESCE(SUM(s.total_input_tokens), 0) AS DOUBLE) as totalInputTokens,
       CAST(COALESCE(SUM(s.total_output_tokens), 0) AS DOUBLE) as totalOutputTokens,
-      CAST(COALESCE(SUM(s.total_input_tokens + s.total_output_tokens), 0) AS DOUBLE) as totalTokens,
+      CAST(COALESCE(SUM(s.total_cache_creation_tokens), 0) AS DOUBLE) as totalCacheCreationTokens,
+      CAST(COALESCE(SUM(s.total_cache_read_tokens), 0) AS DOUBLE) as totalCacheReadTokens,
+      CAST(COALESCE(SUM(s.total_input_tokens + s.total_output_tokens + s.total_cache_creation_tokens + s.total_cache_read_tokens), 0) AS DOUBLE) as totalTokens,
       CAST(COALESCE(SUM(s.estimated_cost), 0.0) AS DOUBLE) as estimatedCost,
-      CAST(COALESCE((
-        SELECT COUNT(*)
-        FROM turns t
-        WHERE t.session_id IN (
-          SELECT s2.id FROM sessions s2 WHERE s2.member_id = s.member_id
-        )
-      ), 0) AS DOUBLE) as totalTurns
+      CAST(COALESCE(SUM(s.turn_count), 0) AS DOUBLE) as totalTurns
     FROM sessions s
     ${joinClause}
     ${whereClause}
@@ -259,6 +259,8 @@ export async function getMemberStats(filters: DashboardFilters) {
     sessionCount: Number(row.sessionCount),
     totalInputTokens: Number(row.totalInputTokens),
     totalOutputTokens: Number(row.totalOutputTokens),
+    totalCacheCreationTokens: Number(row.totalCacheCreationTokens),
+    totalCacheReadTokens: Number(row.totalCacheReadTokens),
     totalTokens: Number(row.totalTokens),
     estimatedCost: Math.round(Number(row.estimatedCost) * 10000) / 10000,
     totalTurns: Number(row.totalTurns),
@@ -280,6 +282,8 @@ export async function getSubagentStats(filters: DashboardFilters) {
     _sum: {
       inputTokens: true,
       outputTokens: true,
+      cacheCreationTokens: true,
+      cacheReadTokens: true,
       estimatedCost: true,
     },
   });
@@ -288,7 +292,8 @@ export async function getSubagentStats(filters: DashboardFilters) {
     agentType: s.agentType,
     count: s._count.id,
     avgDuration: Math.round((s._avg.durationSeconds ?? 0) * 100) / 100,
-    totalTokens: (s._sum.inputTokens ?? 0) + (s._sum.outputTokens ?? 0),
+    totalTokens: (s._sum.inputTokens ?? 0) + (s._sum.outputTokens ?? 0)
+      + (s._sum.cacheCreationTokens ?? 0) + (s._sum.cacheReadTokens ?? 0),
     estimatedCost: Math.round((s._sum.estimatedCost ?? 0) * 10000) / 10000,
   }));
 
@@ -462,6 +467,8 @@ export async function getSessions(filters: DashboardFilters, page = 1, perPage =
         durationMs: true,
         totalInputTokens: true,
         totalOutputTokens: true,
+        totalCacheCreationTokens: true,
+        totalCacheReadTokens: true,
         estimatedCost: true,
         turnCount: true,
         subagentCount: true,
@@ -671,7 +678,7 @@ export async function getHeatmapData(filters: DashboardFilters) {
       (DAYOFWEEK(s.started_at) - 1) as dayOfWeek,
       HOUR(s.started_at) as hour,
       CAST(COUNT(*) AS DOUBLE) as count,
-      CAST(COALESCE(SUM(s.total_input_tokens + s.total_output_tokens), 0) AS DOUBLE) as totalTokens
+      CAST(COALESCE(SUM(s.total_input_tokens + s.total_output_tokens + s.total_cache_creation_tokens + s.total_cache_read_tokens), 0) AS DOUBLE) as totalTokens
     FROM sessions s
     ${joinClause}
     ${whereClause}
@@ -808,7 +815,9 @@ export async function getRepoDetail(repo: string, filters: DashboardFilters) {
       s.git_branch as gitBranch,
       CAST(COUNT(*) AS DOUBLE) as sessionCount,
       CAST(COALESCE(SUM(s.total_input_tokens), 0) AS DOUBLE) as totalInputTokens,
-      CAST(COALESCE(SUM(s.total_output_tokens), 0) AS DOUBLE) as totalOutputTokens
+      CAST(COALESCE(SUM(s.total_output_tokens), 0) AS DOUBLE) as totalOutputTokens,
+      CAST(COALESCE(SUM(s.total_cache_creation_tokens), 0) AS DOUBLE) as totalCacheCreationTokens,
+      CAST(COALESCE(SUM(s.total_cache_read_tokens), 0) AS DOUBLE) as totalCacheReadTokens
     FROM sessions s
     ${joinClause}
     ${whereClause}
@@ -844,7 +853,7 @@ export async function getRepoDetail(repo: string, filters: DashboardFilters) {
       m.git_email as gitEmail,
       m.display_name as displayName,
       CAST(COUNT(*) AS DOUBLE) as sessionCount,
-      CAST(COALESCE(SUM(s.total_input_tokens + s.total_output_tokens), 0) AS DOUBLE) as totalTokens
+      CAST(COALESCE(SUM(s.total_input_tokens + s.total_output_tokens + s.total_cache_creation_tokens + s.total_cache_read_tokens), 0) AS DOUBLE) as totalTokens
     FROM sessions s
     LEFT JOIN members m ON s.member_id = m.id
     ${memberWhereClause}
@@ -857,8 +866,8 @@ export async function getRepoDetail(repo: string, filters: DashboardFilters) {
     SELECT
       DATE(s.started_at) as date,
       CAST(COUNT(*) AS DOUBLE) as sessionCount,
-      CAST(COALESCE(SUM((SELECT COUNT(*) FROM turns t WHERE t.session_id = s.id)), 0) AS DOUBLE) as turnCount,
-      CAST(COALESCE(SUM(s.total_input_tokens + s.total_output_tokens), 0) AS DOUBLE) as totalTokens
+      CAST(COALESCE(SUM(s.turn_count), 0) AS DOUBLE) as turnCount,
+      CAST(COALESCE(SUM(s.total_input_tokens + s.total_output_tokens + s.total_cache_creation_tokens + s.total_cache_read_tokens), 0) AS DOUBLE) as totalTokens
     FROM sessions s
     ${joinClause}
     ${whereClause}
@@ -893,7 +902,7 @@ export async function getRepoDetail(repo: string, filters: DashboardFilters) {
       m.display_name as displayName,
       s.started_at as startedAt,
       s.summary,
-      CAST((SELECT COUNT(*) FROM turns t WHERE t.session_id = s.id) AS DOUBLE) as turnCount,
+      CAST(s.turn_count AS DOUBLE) as turnCount,
       CAST((SELECT COUNT(*) FROM file_changes fc WHERE fc.session_id = s.id) AS DOUBLE) as fileChangeCount
     FROM sessions s
     LEFT JOIN members m ON s.member_id = m.id
@@ -948,6 +957,8 @@ export async function getRepoDetail(repo: string, filters: DashboardFilters) {
       sessionCount: Number(row.sessionCount),
       totalInputTokens: Number(row.totalInputTokens),
       totalOutputTokens: Number(row.totalOutputTokens),
+      totalCacheCreationTokens: Number(row.totalCacheCreationTokens),
+      totalCacheReadTokens: Number(row.totalCacheReadTokens),
       sessions: sessionsByBranch.get(row.gitBranch ?? '') ?? [],
     })),
     members: memberRows.map(row => ({
@@ -977,6 +988,8 @@ export async function getMemberDetail(member: string, filters: DashboardFilters)
       DATE(s.started_at) as date,
       CAST(COALESCE(SUM(s.total_input_tokens), 0) AS DOUBLE) as inputTokens,
       CAST(COALESCE(SUM(s.total_output_tokens), 0) AS DOUBLE) as outputTokens,
+      CAST(COALESCE(SUM(s.total_cache_creation_tokens), 0) AS DOUBLE) as cacheCreationTokens,
+      CAST(COALESCE(SUM(s.total_cache_read_tokens), 0) AS DOUBLE) as cacheReadTokens,
       CAST(COUNT(*) AS DOUBLE) as sessionCount
     FROM sessions s
     LEFT JOIN members m ON s.member_id = m.id
@@ -990,7 +1003,7 @@ export async function getMemberDetail(member: string, filters: DashboardFilters)
     SELECT
       s.model,
       CAST(COUNT(*) AS DOUBLE) as sessionCount,
-      CAST(COALESCE(SUM(s.total_input_tokens + s.total_output_tokens), 0) AS DOUBLE) as totalTokens
+      CAST(COALESCE(SUM(s.total_input_tokens + s.total_output_tokens + s.total_cache_creation_tokens + s.total_cache_read_tokens), 0) AS DOUBLE) as totalTokens
     FROM sessions s
     LEFT JOIN members m ON s.member_id = m.id
     ${whereClause}
@@ -1030,6 +1043,8 @@ export async function getMemberDetail(member: string, filters: DashboardFilters)
       date: toDateStr(row.date),
       inputTokens: Number(row.inputTokens),
       outputTokens: Number(row.outputTokens),
+      cacheCreationTokens: Number(row.cacheCreationTokens),
+      cacheReadTokens: Number(row.cacheReadTokens),
       sessionCount: Number(row.sessionCount),
     })),
     modelBreakdown: modelRows.map(row => ({
@@ -1087,9 +1102,9 @@ export async function getRepoDateHeatmap(filters: DashboardFilters) {
     SELECT
       s.git_repo as gitRepo,
       DATE(s.started_at) as date,
-      CAST(COALESCE(SUM(s.total_input_tokens + s.total_output_tokens), 0) AS DOUBLE) as totalTokens,
+      CAST(COALESCE(SUM(s.total_input_tokens + s.total_output_tokens + s.total_cache_creation_tokens + s.total_cache_read_tokens), 0) AS DOUBLE) as totalTokens,
       CAST(COUNT(*) AS DOUBLE) as sessionCount,
-      CAST(COALESCE(SUM((SELECT COUNT(*) FROM turns t WHERE t.session_id = s.id)), 0) AS DOUBLE) as turnCount,
+      CAST(COALESCE(SUM(s.turn_count), 0) AS DOUBLE) as turnCount,
       CAST(COALESCE(SUM(s.estimated_cost), 0.0) AS DOUBLE) as estimatedCost
     FROM sessions s
     ${joinClause}
@@ -1121,9 +1136,9 @@ export async function getMemberDateHeatmap(filters: DashboardFilters) {
       m.display_name as displayName,
       m.git_email as gitEmail,
       DATE(s.started_at) as date,
-      CAST(COALESCE(SUM(s.total_input_tokens + s.total_output_tokens), 0) AS DOUBLE) as totalTokens,
+      CAST(COALESCE(SUM(s.total_input_tokens + s.total_output_tokens + s.total_cache_creation_tokens + s.total_cache_read_tokens), 0) AS DOUBLE) as totalTokens,
       CAST(COUNT(*) AS DOUBLE) as sessionCount,
-      CAST(COALESCE(SUM((SELECT COUNT(*) FROM turns t WHERE t.session_id = s.id)), 0) AS DOUBLE) as turnCount
+      CAST(COALESCE(SUM(s.turn_count), 0) AS DOUBLE) as turnCount
     FROM sessions s
     LEFT JOIN members m ON s.member_id = m.id
     ${whereClause}
@@ -1153,13 +1168,13 @@ export async function getProductivityMetrics(filters: DashboardFilters) {
       m.display_name as displayName,
       m.git_email as gitEmail,
       CAST(COUNT(*) AS DOUBLE) as sessionCount,
-      CAST(COALESCE(SUM((SELECT COUNT(*) FROM turns t WHERE t.session_id = s.id)), 0) AS DOUBLE) as totalTurns,
+      CAST(COALESCE(SUM(s.turn_count), 0) AS DOUBLE) as totalTurns,
       CAST(COALESCE(SUM(s.tool_use_count), 0) AS DOUBLE) as totalToolUses,
       CAST(COALESCE(SUM(s.subagent_count), 0) AS DOUBLE) as totalSubagents,
       CAST(COALESCE(SUM(s.error_count), 0) AS DOUBLE) as totalErrors,
-      CAST(COALESCE(SUM(s.total_input_tokens + s.total_output_tokens), 0) AS DOUBLE) as totalTokens,
+      CAST(COALESCE(SUM(s.total_input_tokens + s.total_output_tokens + s.total_cache_creation_tokens + s.total_cache_read_tokens), 0) AS DOUBLE) as totalTokens,
       CAST(COALESCE(SUM(s.estimated_cost), 0.0) AS DOUBLE) as totalCost,
-      CAST(COALESCE(AVG((SELECT COUNT(*) FROM turns t WHERE t.session_id = s.id)), 0) AS DOUBLE) as avgTurns,
+      CAST(COALESCE(AVG(s.turn_count), 0) AS DOUBLE) as avgTurns,
       CAST(COALESCE(AVG(s.tool_use_count), 0) AS DOUBLE) as avgToolUses
     FROM sessions s
     LEFT JOIN members m ON s.member_id = m.id
@@ -1240,6 +1255,8 @@ export async function getPromptFeed(
       durationMs: true,
       inputTokens: true,
       outputTokens: true,
+      cacheCreationTokens: true,
+      cacheReadTokens: true,
       model: true,
       session: {
         select: {
@@ -1274,6 +1291,8 @@ export async function getPromptFeed(
       durationMs: t.durationMs,
       inputTokens: t.inputTokens,
       outputTokens: t.outputTokens,
+      cacheCreationTokens: t.cacheCreationTokens,
+      cacheReadTokens: t.cacheReadTokens,
       model: t.model ?? t.session.model,
       member: t.session.member
         ? {

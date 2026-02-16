@@ -33,6 +33,8 @@ export interface DailyStatsItem {
   sessionCount: number;
   totalInputTokens: number;
   totalOutputTokens: number;
+  totalCacheCreationTokens: number;
+  totalCacheReadTokens: number;
   estimatedCost: number;
 }
 
@@ -42,6 +44,8 @@ export interface MemberStatsItem {
   sessionCount: number;
   totalInputTokens: number;
   totalOutputTokens: number;
+  totalCacheCreationTokens: number;
+  totalCacheReadTokens: number;
   totalTokens: number;
   estimatedCost: number;
   totalTurns: number;
@@ -94,6 +98,8 @@ export interface SessionItem {
   durationMs: number | null;
   totalInputTokens: number;
   totalOutputTokens: number;
+  totalCacheCreationTokens: number;
+  totalCacheReadTokens: number;
   estimatedCost: number;
   turnCount: number;
   subagentCount: number;
@@ -145,6 +151,8 @@ export interface TurnDetail {
   durationMs: number | null;
   inputTokens: number;
   outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
   stopReason: string | null;
   model: string | null;
   responseText: string | null;
@@ -224,6 +232,8 @@ export interface RepoDetailResponse {
     sessionCount: number;
     totalInputTokens: number;
     totalOutputTokens: number;
+    totalCacheCreationTokens: number;
+    totalCacheReadTokens: number;
     sessions: {
       id: number;
       sessionUuid: string;
@@ -254,6 +264,8 @@ export interface MemberDetailResponse {
     date: string;
     inputTokens: number;
     outputTokens: number;
+    cacheCreationTokens: number;
+    cacheReadTokens: number;
     sessionCount: number;
   }[];
   modelBreakdown: {
@@ -313,6 +325,8 @@ export interface PromptFeedItem {
   durationMs: number | null;
   inputTokens: number;
   outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
   model: string | null;
   member: { gitEmail: string; displayName: string | null } | null;
   session: {

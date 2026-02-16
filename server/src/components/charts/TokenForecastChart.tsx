@@ -6,6 +6,7 @@ import type { DailyStatsItem } from '@/lib/types';
 import { COLORS } from '@/lib/constants';
 import { formatCompact } from '@/lib/formatters';
 import { forecastTokens } from '@/lib/regression';
+import { totalTokens } from '@/lib/tokenUtils';
 import './ChartSetup';
 
 interface TokenForecastChartProps {
@@ -16,7 +17,7 @@ interface TokenForecastChartProps {
 export function TokenForecastChart({ data, forecastDays = 7 }: TokenForecastChartProps) {
   const dailyTokens = data.map(d => ({
     date: d.date,
-    tokens: d.totalInputTokens + d.totalOutputTokens,
+    tokens: totalTokens(d),
   }));
 
   const forecasts = forecastTokens(dailyTokens, forecastDays);

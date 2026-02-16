@@ -34,6 +34,7 @@ import {
   shortModel,
   truncate,
 } from '@/lib/formatters';
+import { totalTokens as calcTotalTokens } from '@/lib/tokenUtils';
 import { COLORS, MODEL_COLORS } from '@/lib/constants';
 import { classifySessions, getClassificationSummary } from '@/lib/session-classifier';
 import type { DailyStatsItem, SessionItem } from '@/lib/types';
@@ -65,8 +66,8 @@ export function MemberDetailPage({ email }: MemberDetailPageProps) {
 
   // Total tokens
   const totalTokens = memberInfo
-    ? memberInfo.totalInputTokens + memberInfo.totalOutputTokens
-    : d.dailyStats.reduce((s, ds) => s + ds.inputTokens + ds.outputTokens, 0);
+    ? calcTotalTokens(memberInfo)
+    : d.dailyStats.reduce((s, ds) => s + calcTotalTokens(ds), 0);
 
   // Avg turns per session
   const avgTurns = prodInfo?.avgTurns ?? 0;
@@ -80,6 +81,8 @@ export function MemberDetailPage({ email }: MemberDetailPageProps) {
     sessionCount: ds.sessionCount,
     totalInputTokens: ds.inputTokens,
     totalOutputTokens: ds.outputTokens,
+    totalCacheCreationTokens: ds.cacheCreationTokens || 0,
+    totalCacheReadTokens: ds.cacheReadTokens || 0,
     estimatedCost: 0,
   }));
 
@@ -123,7 +126,7 @@ export function MemberDetailPage({ email }: MemberDetailPageProps) {
       header: 'トークン',
       align: 'right' as const,
       render: (s: SessionItem) => (
-        <TokenBreakdown input={s.totalInputTokens} output={s.totalOutputTokens} compact />
+        <TokenBreakdown input={s.totalInputTokens} output={s.totalOutputTokens} cacheCreation={s.totalCacheCreationTokens} cacheRead={s.totalCacheReadTokens} compact />
       ),
     },
     {
@@ -229,7 +232,7 @@ export function MemberDetailPage({ email }: MemberDetailPageProps) {
                   labels: d.dailyStats.map(ds => ds.date),
                   datasets: [{
                     label: 'トークン',
-                    data: d.dailyStats.map(ds => ds.inputTokens + ds.outputTokens),
+                    data: d.dailyStats.map(ds => calcTotalTokens(ds)),
                     backgroundColor: COLORS.primary,
                     borderRadius: 2,
                   }],

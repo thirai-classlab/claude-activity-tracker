@@ -11,6 +11,7 @@ import { ErrorDisplay } from '@/components/shared/ErrorDisplay';
 import { useFilters } from '@/hooks/useFilters';
 import { useRepoStats, useStats } from '@/hooks/useApi';
 import { formatNumber, formatCompact, formatCost, formatDateShort, shortRepo } from '@/lib/formatters';
+import { totalTokens as calcTotalTokens } from '@/lib/tokenUtils';
 
 export function ReposPage() {
   const router = useRouter();
@@ -47,7 +48,7 @@ export function ReposPage() {
       header: 'トークン',
       align: 'right' as const,
       render: (item: typeof data[number]) => (
-        <span className="font-mono">{formatCompact(item.totalInputTokens + item.totalOutputTokens)}</span>
+        <span className="font-mono">{formatCompact(calcTotalTokens(item))}</span>
       ),
     },
     {
@@ -77,7 +78,7 @@ export function ReposPage() {
     },
   ];
 
-  const totalTokens = (stats.data?.totalInputTokens || 0) + (stats.data?.totalOutputTokens || 0);
+  const totalTokens = calcTotalTokens(stats.data || {});
 
   return (
     <>

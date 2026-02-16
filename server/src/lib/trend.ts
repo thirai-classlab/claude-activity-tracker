@@ -4,6 +4,8 @@ interface WeeklyAgg {
   sessions: number;
   inputTokens: number;
   outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
   cost: number;
 }
 
@@ -13,7 +15,7 @@ interface WeeklyAgg {
  */
 export function splitWeeks(dailyStats: DailyStatsItem[]): { current: WeeklyAgg; previous: WeeklyAgg } {
   if (dailyStats.length === 0) {
-    const empty: WeeklyAgg = { sessions: 0, inputTokens: 0, outputTokens: 0, cost: 0 };
+    const empty: WeeklyAgg = { sessions: 0, inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0, cost: 0 };
     return { current: { ...empty }, previous: { ...empty } };
   }
 
@@ -28,6 +30,8 @@ export function splitWeeks(dailyStats: DailyStatsItem[]): { current: WeeklyAgg; 
     sessions: items.reduce((s, d) => s + d.sessionCount, 0),
     inputTokens: items.reduce((s, d) => s + d.totalInputTokens, 0),
     outputTokens: items.reduce((s, d) => s + d.totalOutputTokens, 0),
+    cacheCreationTokens: items.reduce((s, d) => s + (d.totalCacheCreationTokens || 0), 0),
+    cacheReadTokens: items.reduce((s, d) => s + (d.totalCacheReadTokens || 0), 0),
     cost: items.reduce((s, d) => s + d.estimatedCost, 0),
   });
 
