@@ -297,11 +297,13 @@ function SubagentBlock({ sub }: { sub: SubagentDetail }) {
 /** System event types that are not useful per-turn */
 const SYSTEM_EVENT_TYPES = new Set(['turn_duration', 'compact']);
 
-/** Collapsible toggle for file changes + events per turn */
+/** Collapsible toggle for tool uses + file changes + events per turn */
 function TurnDetailsToggle({
+  toolUses,
   fileChanges,
   events,
 }: {
+  toolUses: ToolUseDetail[];
   fileChanges: FileChangeDetail[];
   events: SessionEvent[];
 }) {
@@ -327,11 +329,20 @@ function TurnDetailsToggle({
     opCounts.set(label, (opCounts.get(label) || 0) + 1);
   }
 
-  const hasContent = uniqueFiles.length > 0 || meaningfulEvents.length > 0;
+  // Tool failure count
+  const toolFailureCount = toolUses.filter(t => t.status === 'error').length;
+
+  const hasContent = toolUses.length > 0 || uniqueFiles.length > 0 || meaningfulEvents.length > 0;
   if (!hasContent) return null;
 
   // Build summary badges
   const summaryBadges: { label: string; count: number; color: string }[] = [];
+  if (toolUses.length > 0) {
+    summaryBadges.push({ label: 'ツール', count: toolUses.length, color: 'var(--info)' });
+  }
+  if (toolFailureCount > 0) {
+    summaryBadges.push({ label: '失敗', count: toolFailureCount, color: 'var(--danger)' });
+  }
   for (const [label, count] of opCounts) {
     const color = label === '作成' ? 'var(--success)'
       : label === '変更' ? 'var(--warning)'
@@ -343,6 +354,8 @@ function TurnDetailsToggle({
   if (meaningfulEvents.length > 0) {
     summaryBadges.push({ label: 'イベント', count: meaningfulEvents.length, color: 'var(--info)' });
   }
+
+  const hasRightColumn = uniqueFiles.length > 0 || meaningfulEvents.length > 0;
 
   return (
     <div style={{
@@ -391,78 +404,95 @@ function TurnDetailsToggle({
         </div>
       </button>
 
-      {/* Expanded content */}
+      {/* Expanded content — 2 column layout */}
       {open && (
         <div style={{ padding: '8px 12px', display: 'flex', gap: '16px' }}>
-          {/* Left: File changes */}
-          {uniqueFiles.length > 0 && (
+          {/* Left column: Tool uses */}
+          {toolUses.length > 0 && (
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                ファイル変更 ({uniqueFiles.length})
+                ツール使用 ({toolUses.length})
               </div>
-              {uniqueFiles.map((f, i) => {
-                const fileName = f.filePath.split('/').pop() || f.filePath;
-                const dir = f.filePath.substring(0, f.filePath.length - fileName.length);
-                return (
-                  <div key={i} style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    padding: '3px 0',
-                    fontSize: '12px',
-                  }}>
-                    {opIcon(f.operation)}
-                    <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{dir}</span>
-                    <span style={{ fontWeight: 500 }}>{fileName}</span>
-                  </div>
-                );
-              })}
+              <div className="turn-tools">
+                {toolUses.map((t, i) => (
+                  <ToolUseRow key={i} tool={t} isLast={i === toolUses.length - 1} />
+                ))}
+              </div>
             </div>
           )}
 
-          {/* Right: Events */}
-          {meaningfulEvents.length > 0 && (
+          {/* Right column: File changes + Events */}
+          {hasRightColumn && (
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                イベント ({meaningfulEvents.length})
-              </div>
-              {meaningfulEvents.slice(0, MAX_EVENTS_DISPLAY).map((ev, i) => (
-                <div key={i} style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '3px 0',
-                  fontSize: '12px',
-                }}>
-                  <Zap size={13} style={{ color: 'var(--info)', flexShrink: 0 }} />
-                  <span style={{
-                    padding: '1px 6px',
-                    borderRadius: '3px',
-                    background: 'var(--info, #06b6d4)' + '20',
-                    color: 'var(--info, #06b6d4)',
-                    fontSize: '11px',
-                    fontWeight: 500,
-                    whiteSpace: 'nowrap',
-                  }}>
-                    {ev.eventType}
-                  </span>
-                  {ev.eventSubtype && (
-                    <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
-                      {ev.eventSubtype}
-                    </span>
-                  )}
-                  <span style={{ color: 'var(--text-secondary)', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {typeof ev.eventData === 'string'
-                      ? truncate(ev.eventData, 60)
-                      : ev.eventData
-                        ? truncate(JSON.stringify(ev.eventData), 60)
-                        : ''}
-                  </span>
+              {uniqueFiles.length > 0 && (
+                <div style={{ marginBottom: meaningfulEvents.length > 0 ? '12px' : 0 }}>
+                  <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    ファイル変更 ({uniqueFiles.length})
+                  </div>
+                  {uniqueFiles.map((f, i) => {
+                    const fileName = f.filePath.split('/').pop() || f.filePath;
+                    const dir = f.filePath.substring(0, f.filePath.length - fileName.length);
+                    return (
+                      <div key={i} style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '3px 0',
+                        fontSize: '12px',
+                      }}>
+                        {opIcon(f.operation)}
+                        <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{dir}</span>
+                        <span style={{ fontWeight: 500 }}>{fileName}</span>
+                      </div>
+                    );
+                  })}
                 </div>
-              ))}
-              {meaningfulEvents.length > MAX_EVENTS_DISPLAY && (
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', padding: '4px 0', fontStyle: 'italic' }}>
-                  他 {meaningfulEvents.length - MAX_EVENTS_DISPLAY}件
+              )}
+
+              {meaningfulEvents.length > 0 && (
+                <div>
+                  <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    イベント ({meaningfulEvents.length})
+                  </div>
+                  {meaningfulEvents.slice(0, MAX_EVENTS_DISPLAY).map((ev, i) => (
+                    <div key={i} style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '3px 0',
+                      fontSize: '12px',
+                    }}>
+                      <Zap size={13} style={{ color: 'var(--info)', flexShrink: 0 }} />
+                      <span style={{
+                        padding: '1px 6px',
+                        borderRadius: '3px',
+                        background: 'var(--info, #06b6d4)' + '20',
+                        color: 'var(--info, #06b6d4)',
+                        fontSize: '11px',
+                        fontWeight: 500,
+                        whiteSpace: 'nowrap',
+                      }}>
+                        {ev.eventType}
+                      </span>
+                      {ev.eventSubtype && (
+                        <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
+                          {ev.eventSubtype}
+                        </span>
+                      )}
+                      <span style={{ color: 'var(--text-secondary)', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {typeof ev.eventData === 'string'
+                          ? truncate(ev.eventData, 60)
+                          : ev.eventData
+                            ? truncate(JSON.stringify(ev.eventData), 60)
+                            : ''}
+                      </span>
+                    </div>
+                  ))}
+                  {meaningfulEvents.length > MAX_EVENTS_DISPLAY && (
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', padding: '4px 0', fontStyle: 'italic' }}>
+                      他 {meaningfulEvents.length - MAX_EVENTS_DISPLAY}件
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -559,18 +589,6 @@ function TurnCard({
         </div>
       )}
 
-      {/* Tool uses */}
-      {mainToolUses.length > 0 && (
-        <div className="turn-section">
-          <div className="turn-section-label">ツール使用 ({mainToolUses.length})</div>
-          <div className="turn-tools">
-            {mainToolUses.map((t, i) => (
-              <ToolUseRow key={i} tool={t} isLast={i === mainToolUses.length - 1} />
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* Subagents */}
       {subagents.length > 0 && (
         <div className="turn-section">
@@ -581,8 +599,8 @@ function TurnCard({
         </div>
       )}
 
-      {/* File changes + Events toggle (side by side) */}
-      <TurnDetailsToggle fileChanges={fileChanges} events={events} />
+      {/* Details accordion: Tool uses + File changes + Events */}
+      <TurnDetailsToggle toolUses={mainToolUses} fileChanges={fileChanges} events={events} />
 
       {/* Response text */}
       {turn.responseText && (
