@@ -5,5 +5,7 @@ import { RepoDetailPage } from '@/components/pages/repos/RepoDetailPage';
 
 export default function RepoDetail() {
   const params = useParams();
-  return <RepoDetailPage repoId={params.id as string} />;
+  const idSegments = params.id as string[];
+  const repoId = idSegments.join('/');
+  return <RepoDetailPage repoId={repoId} />;
 }
