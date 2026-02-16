@@ -1,6 +1,15 @@
 import prisma from '../lib/prisma';
 import { Prisma } from '@prisma/client';
 
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+/** Convert DATE column (returned as Date object by Prisma) to YYYY-MM-DD string */
+function toDateStr(v: unknown): string {
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  if (typeof v === 'string') return v.slice(0, 10);
+  return String(v);
+}
+
 // ─── Filter Types ───────────────────────────────────────────────────────────
 
 export interface DashboardFilters {
@@ -197,7 +206,7 @@ export async function getDailyStats(filters: DashboardFilters) {
   const rows = await prisma.$queryRawUnsafe<any[]>(sql, ...params);
 
   return rows.map(row => ({
-    date: row.date,
+    date: toDateStr(row.date),
     sessionCount: Number(row.sessionCount),
     totalInputTokens: Number(row.totalInputTokens),
     totalOutputTokens: Number(row.totalOutputTokens),
@@ -405,7 +414,7 @@ export async function getCostStats(filters: DashboardFilters) {
     }
 
     return {
-      date: row.date,
+      date: toDateStr(row.date),
       model: row.model ?? 'unknown',
       cost: Math.round(cost * 10000) / 10000,
     };
@@ -836,7 +845,7 @@ export async function getRepoDetail(repo: string, filters: DashboardFilters) {
 
   return {
     dailyStats: dailyRows.map(row => ({
-      date: row.date,
+      date: toDateStr(row.date),
       sessionCount: Number(row.sessionCount),
       turnCount: Number(row.turnCount),
       totalTokens: Number(row.totalTokens),
@@ -925,7 +934,7 @@ export async function getMemberDetail(member: string, filters: DashboardFilters)
 
   return {
     dailyStats: dailyRows.map(row => ({
-      date: row.date,
+      date: toDateStr(row.date),
       inputTokens: Number(row.inputTokens),
       outputTokens: Number(row.outputTokens),
       sessionCount: Number(row.sessionCount),
@@ -1001,7 +1010,7 @@ export async function getRepoDateHeatmap(filters: DashboardFilters) {
 
   return rows.map(row => ({
     gitRepo: row.gitRepo,
-    date: row.date,
+    date: toDateStr(row.date),
     totalTokens: Number(row.totalTokens),
     sessionCount: Number(row.sessionCount),
     turnCount: Number(row.turnCount),
@@ -1034,7 +1043,7 @@ export async function getMemberDateHeatmap(filters: DashboardFilters) {
   return rows.map(row => ({
     displayName: row.displayName ?? row.gitEmail ?? 'unknown',
     gitEmail: row.gitEmail ?? 'unknown',
-    date: row.date,
+    date: toDateStr(row.date),
     totalTokens: Number(row.totalTokens),
     sessionCount: Number(row.sessionCount),
     turnCount: Number(row.turnCount),
