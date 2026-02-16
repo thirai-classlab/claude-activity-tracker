@@ -188,13 +188,22 @@ function SubagentBlock({ sub }: { sub: SubagentDetail }) {
       {taskName && (
         <div className="turn-subagent-desc">{truncate(taskName, 120)}</div>
       )}
-      {subTotalTokens > 0 && (
-        <div className="turn-token-row">
-          <span>入力: {formatCompact(sub.inputTokens)}</span>
-          <span>出力: {formatCompact(sub.outputTokens)}</span>
-          {sub.cacheReadTokens > 0 && <span>キャッシュ読取: {formatCompact(sub.cacheReadTokens)}</span>}
-        </div>
-      )}
+      <div className="turn-token-row" style={{
+        display: 'flex',
+        gap: '10px',
+        flexWrap: 'wrap',
+        fontSize: '11px',
+        padding: '3px 8px',
+        background: 'var(--bg-secondary, rgba(0,0,0,0.03))',
+        borderRadius: '4px',
+        margin: '4px 0',
+      }}>
+        <span style={{ color: 'var(--text-secondary)' }}>入力: <strong>{formatCompact(sub.inputTokens)}</strong></span>
+        <span style={{ color: 'var(--text-secondary)' }}>出力: <strong>{formatCompact(sub.outputTokens)}</strong></span>
+        <span style={{ color: 'var(--text-secondary)' }}>キャッシュ作成: <strong>{formatCompact(sub.cacheCreationTokens)}</strong></span>
+        <span style={{ color: 'var(--text-secondary)' }}>キャッシュ読取: <strong>{formatCompact(sub.cacheReadTokens)}</strong></span>
+        <span style={{ color: 'var(--text-primary, var(--text-secondary))', fontWeight: 500 }}>合計: <strong>{formatCompact(subTotalTokens)}</strong></span>
+      </div>
       {/* Accordion for tool uses + file changes */}
       {hasDetails && (
         <div style={{
