@@ -101,10 +101,10 @@ export function RepoDetailPage({ repoId }: RepoDetailPageProps) {
     },
     {
       key: 'date',
-      header: '日時',
+      header: '最終更新日',
       render: (item: SessionItem) => (
         <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-          {formatDateShort(item.startedAt)}
+          {formatDateShort(item.endedAt || item.startedAt)}
         </span>
       ),
     },
@@ -183,10 +183,10 @@ export function RepoDetailPage({ repoId }: RepoDetailPageProps) {
     },
     {
       key: 'date',
-      header: '日時',
+      header: '最終更新日',
       render: (item: BranchSession) => (
         <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-          {formatDateShort(item.startedAt)}
+          {formatDateShort(item.endedAt || item.startedAt)}
         </span>
       ),
     },

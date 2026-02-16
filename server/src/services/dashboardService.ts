@@ -812,10 +812,11 @@ export async function getRepoStats(filters: DashboardFilters) {
       CAST(COUNT(*) AS DOUBLE) as sessionCount,
       CAST(COALESCE(SUM(s.total_input_tokens), 0) AS DOUBLE) as totalInputTokens,
       CAST(COALESCE(SUM(s.total_output_tokens), 0) AS DOUBLE) as totalOutputTokens,
+      CAST(COALESCE(SUM(s.total_cache_creation_tokens), 0) AS DOUBLE) as totalCacheCreationTokens,
       CAST(COALESCE(SUM(s.total_cache_read_tokens), 0) AS DOUBLE) as totalCacheReadTokens,
       CAST(COALESCE(SUM(s.estimated_cost), 0) AS DOUBLE) as estimatedCost,
       CAST(COUNT(DISTINCT s.member_id) AS DOUBLE) as memberCount,
-      MAX(s.started_at) as lastUsed
+      MAX(COALESCE(s.ended_at, s.started_at)) as lastUsed
     FROM sessions s
     ${joinClause}
     ${whereClause}
@@ -831,6 +832,7 @@ export async function getRepoStats(filters: DashboardFilters) {
     sessionCount: Number(row.sessionCount),
     totalInputTokens: Number(row.totalInputTokens),
     totalOutputTokens: Number(row.totalOutputTokens),
+    totalCacheCreationTokens: Number(row.totalCacheCreationTokens),
     totalCacheReadTokens: Number(row.totalCacheReadTokens),
     estimatedCost: Number(row.estimatedCost),
     memberCount: Number(row.memberCount),
@@ -941,13 +943,14 @@ export async function getRepoDetail(repo: string, filters: DashboardFilters) {
       m.git_email as gitEmail,
       m.display_name as displayName,
       s.started_at as startedAt,
+      s.ended_at as endedAt,
       s.summary,
       CAST((SELECT COUNT(*) FROM turns t WHERE t.session_id = s.id) AS DOUBLE) as turnCount,
       CAST((SELECT COUNT(*) FROM file_changes fc WHERE fc.session_id = s.id) AS DOUBLE) as fileChangeCount
     FROM sessions s
     LEFT JOIN members m ON s.member_id = m.id
     ${whereClause}
-    ORDER BY s.git_branch, s.started_at DESC
+    ORDER BY s.git_branch, COALESCE(s.ended_at, s.started_at) DESC
   `;
 
   const [branchRows, memberRows, dailyRows, recentSessions, frequentFileRows, branchSessionRows] = await Promise.all([
@@ -956,7 +959,7 @@ export async function getRepoDetail(repo: string, filters: DashboardFilters) {
     prisma.$queryRawUnsafe<any[]>(dailySql, ...params),
     prisma.session.findMany({
       where,
-      orderBy: { startedAt: 'desc' },
+      orderBy: [{ endedAt: 'desc' }, { startedAt: 'desc' }],
       take: 5,
       include: {
         member: {
@@ -979,6 +982,7 @@ export async function getRepoDetail(repo: string, filters: DashboardFilters) {
       gitEmail: row.gitEmail ?? 'unknown',
       displayName: row.displayName ?? null,
       startedAt: row.startedAt ? new Date(row.startedAt).toISOString() : null,
+      endedAt: row.endedAt ? new Date(row.endedAt).toISOString() : null,
       summary: row.summary ?? null,
       turnCount: Number(row.turnCount),
       fileChangeCount: Number(row.fileChangeCount),
@@ -1068,7 +1072,7 @@ export async function getMemberDetail(member: string, filters: DashboardFilters)
     prisma.$queryRawUnsafe<any[]>(modelSql, ...params),
     prisma.session.findMany({
       where: nonStubWhere,
-      orderBy: { startedAt: 'desc' },
+      orderBy: [{ endedAt: 'desc' }, { startedAt: 'desc' }],
       take: 20,
       include: {
         member: {

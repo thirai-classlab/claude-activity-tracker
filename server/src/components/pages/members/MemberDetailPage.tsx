@@ -148,10 +148,10 @@ export function MemberDetailPage({ email }: MemberDetailPageProps) {
     },
     {
       key: 'date',
-      header: '日時',
+      header: '最終更新日',
       render: (s: SessionItem) => (
         <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-          {formatDateShort(s.startedAt)}
+          {formatDateShort(s.endedAt || s.startedAt)}
         </span>
       ),
     },

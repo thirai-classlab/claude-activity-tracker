@@ -220,6 +220,7 @@ export interface RepoStatsItem {
   sessionCount: number;
   totalInputTokens: number;
   totalOutputTokens: number;
+  totalCacheCreationTokens: number;
   totalCacheReadTokens: number;
   estimatedCost: number;
   memberCount: number;
@@ -246,6 +247,7 @@ export interface RepoDetailResponse {
       gitEmail: string;
       displayName: string | null;
       startedAt: string | null;
+      endedAt: string | null;
       summary: string | null;
       turnCount: number;
       fileChangeCount: number;
