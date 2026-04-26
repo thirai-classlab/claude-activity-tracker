@@ -160,9 +160,9 @@ export function OverviewPage() {
           )}
         </ChartCard>
 
-        {/* ヒートマップ行 1: リポジトリ（セッション数 + トークン数）- 2カラム */}
-        <div className="grid-2">
-          <div className="w-full min-w-0 overflow-hidden">
+        {/* ヒートマップ行 1: リポジトリ セッション数（50%幅固定） + トークン数 - flex行 */}
+        <div className="flex flex-col md:flex-row gap-5 mb-5 w-full min-w-0">
+          <div className="w-full md:w-1/2 md:max-w-[50%] min-w-0 overflow-hidden">
             <ChartCard title="リポジトリ × 日付 セッション数">
               {repoDateHeatmap.data ? (
                 <DateHeatmapTable
@@ -186,7 +186,7 @@ export function OverviewPage() {
               )}
             </ChartCard>
           </div>
-          <div className="w-full min-w-0 overflow-hidden">
+          <div className="w-full md:flex-1 min-w-0 overflow-hidden">
             <ChartCard title="リポジトリ × 日付 トークン数">
               {repoDateHeatmap.data ? (
                 <DateHeatmapTable
@@ -212,9 +212,9 @@ export function OverviewPage() {
           </div>
         </div>
 
-        {/* ヒートマップ行 2: リポジトリ ターン数 + メンバー セッション数 - 2カラム */}
-        <div className="grid-2">
-          <div className="w-full min-w-0 overflow-hidden">
+        {/* ヒートマップ行 2: リポジトリ ターン数（50%幅固定） + メンバー セッション数 - flex行 */}
+        <div className="flex flex-col md:flex-row gap-5 mb-5 w-full min-w-0">
+          <div className="w-full md:w-1/2 md:max-w-[50%] min-w-0 overflow-hidden">
             <ChartCard title="リポジトリ × 日付 ターン数">
               {repoDateHeatmap.data ? (
                 <DateHeatmapTable
@@ -238,7 +238,7 @@ export function OverviewPage() {
               )}
             </ChartCard>
           </div>
-          <div className="w-full min-w-0 overflow-hidden">
+          <div className="w-full md:flex-1 min-w-0 overflow-hidden">
             <ChartCard title="メンバー × 日付 セッション数">
               {memberDateHeatmap.data ? (
                 <DateHeatmapTable
@@ -264,9 +264,9 @@ export function OverviewPage() {
           </div>
         </div>
 
-        {/* ヒートマップ行 3: メンバー（トークン数 + ターン数）- 2カラム */}
-        <div className="grid-2">
-          <div className="w-full min-w-0 overflow-hidden">
+        {/* ヒートマップ行 3: メンバー トークン数（50%幅固定） + ターン数 - flex行 */}
+        <div className="flex flex-col md:flex-row gap-5 mb-5 w-full min-w-0">
+          <div className="w-full md:w-1/2 md:max-w-[50%] min-w-0 overflow-hidden">
             <ChartCard title="メンバー × 日付 トークン数">
               {memberDateHeatmap.data ? (
                 <DateHeatmapTable
@@ -290,7 +290,7 @@ export function OverviewPage() {
               )}
             </ChartCard>
           </div>
-          <div className="w-full min-w-0 overflow-hidden">
+          <div className="w-full md:flex-1 min-w-0 overflow-hidden">
             <ChartCard title="メンバー × 日付 ターン数">
               {memberDateHeatmap.data ? (
                 <DateHeatmapTable
