@@ -356,6 +356,59 @@ async function main() {
 
   console.log('  Cleared existing data');
 
+  // Seed model pricing registry (Spec: 002-model-pricing-registry.md)
+  // All rows marked source='fallback_default' so they can be upgraded later by sync-pricing.
+  const pricingNow = new Date();
+  const pricingSeeds: Array<{
+    modelId: string;
+    family: string;
+    tier: string;
+    inputPerMtok: number;
+    outputPerMtok: number;
+    cacheWritePerMtok: number;
+    cacheReadPerMtok: number;
+  }> = [
+    { modelId: 'claude-opus-4-6',              family: 'opus',   tier: 'standard',        inputPerMtok: 15,   outputPerMtok: 75,    cacheWritePerMtok: 18.75, cacheReadPerMtok: 1.5 },
+    { modelId: 'claude-opus-4-7',              family: 'opus',   tier: 'standard',        inputPerMtok: 15,   outputPerMtok: 75,    cacheWritePerMtok: 18.75, cacheReadPerMtok: 1.5 },
+    { modelId: 'claude-opus-4-7-context-1m',   family: 'opus',   tier: 'long_context_1m', inputPerMtok: 30,   outputPerMtok: 112.5, cacheWritePerMtok: 37.5,  cacheReadPerMtok: 3.0 },
+    { modelId: 'claude-sonnet-4-5-20250929',   family: 'sonnet', tier: 'standard',        inputPerMtok: 3,    outputPerMtok: 15,    cacheWritePerMtok: 3.75,  cacheReadPerMtok: 0.3 },
+    { modelId: 'claude-sonnet-4-6',            family: 'sonnet', tier: 'standard',        inputPerMtok: 3,    outputPerMtok: 15,    cacheWritePerMtok: 3.75,  cacheReadPerMtok: 0.3 },
+    { modelId: 'claude-haiku-4-5-20251001',    family: 'haiku',  tier: 'standard',        inputPerMtok: 0.8,  outputPerMtok: 4,     cacheWritePerMtok: 1.0,   cacheReadPerMtok: 0.08 },
+  ];
+
+  for (const p of pricingSeeds) {
+    await prisma.modelPricing.upsert({
+      where: { modelId: p.modelId },
+      update: {
+        family: p.family,
+        tier: p.tier,
+        inputPerMtok: p.inputPerMtok,
+        outputPerMtok: p.outputPerMtok,
+        cacheWritePerMtok: p.cacheWritePerMtok,
+        cacheReadPerMtok: p.cacheReadPerMtok,
+        source: 'fallback_default',
+        fetchedAt: pricingNow,
+        verified: false,
+        deprecated: false,
+      },
+      create: {
+        modelId: p.modelId,
+        family: p.family,
+        tier: p.tier,
+        inputPerMtok: p.inputPerMtok,
+        outputPerMtok: p.outputPerMtok,
+        cacheWritePerMtok: p.cacheWritePerMtok,
+        cacheReadPerMtok: p.cacheReadPerMtok,
+        source: 'fallback_default',
+        fetchedAt: pricingNow,
+        verified: false,
+        deprecated: false,
+      },
+    });
+  }
+  console.log(`  Seeded ${pricingSeeds.length} model_pricing rows (fallback_default)`);
+
+
   // Create members
   const createdMembers = await Promise.all(
     MEMBERS.map((m) =>

@@ -162,146 +162,158 @@ export function OverviewPage() {
 
         {/* ヒートマップ行 1: リポジトリ（セッション数 + トークン数）- 2カラム */}
         <div className="grid-2">
-          <ChartCard title="リポジトリ × 日付 セッション数">
-            {repoDateHeatmap.data ? (
-              <DateHeatmapTable
-                data={repoDateHeatmap.data}
-                rowKey="gitRepo"
-                dateKey="date"
-                valueKey="sessionCount"
-                labelFn={shortRepo}
-                valueFmt={formatNumber}
-                color={[34, 197, 94]}
-                unitLabel="sessions"
-                secondaryKey="totalTokens"
-                secondaryLabel="tokens"
-                secondaryFmt={formatCompact}
-                tertiaryKey="turnCount"
-                tertiaryLabel="turns"
-                tertiaryFmt={formatNumber}
-              />
-            ) : (
-              <LoadingSpinner />
-            )}
-          </ChartCard>
-          <ChartCard title="リポジトリ × 日付 トークン数">
-            {repoDateHeatmap.data ? (
-              <DateHeatmapTable
-                data={repoDateHeatmap.data}
-                rowKey="gitRepo"
-                dateKey="date"
-                valueKey="totalTokens"
-                labelFn={shortRepo}
-                valueFmt={formatCompact}
-                color={[59, 130, 246]}
-                unitLabel="tokens"
-                secondaryKey="sessionCount"
-                secondaryLabel="sessions"
-                secondaryFmt={formatNumber}
-                tertiaryKey="turnCount"
-                tertiaryLabel="turns"
-                tertiaryFmt={formatNumber}
-              />
-            ) : (
-              <LoadingSpinner />
-            )}
-          </ChartCard>
+          <div className="w-full min-w-0 overflow-hidden">
+            <ChartCard title="リポジトリ × 日付 セッション数">
+              {repoDateHeatmap.data ? (
+                <DateHeatmapTable
+                  data={repoDateHeatmap.data}
+                  rowKey="gitRepo"
+                  dateKey="date"
+                  valueKey="sessionCount"
+                  labelFn={shortRepo}
+                  valueFmt={formatNumber}
+                  color={[34, 197, 94]}
+                  unitLabel="sessions"
+                  secondaryKey="totalTokens"
+                  secondaryLabel="tokens"
+                  secondaryFmt={formatCompact}
+                  tertiaryKey="turnCount"
+                  tertiaryLabel="turns"
+                  tertiaryFmt={formatNumber}
+                />
+              ) : (
+                <LoadingSpinner />
+              )}
+            </ChartCard>
+          </div>
+          <div className="w-full min-w-0 overflow-hidden">
+            <ChartCard title="リポジトリ × 日付 トークン数">
+              {repoDateHeatmap.data ? (
+                <DateHeatmapTable
+                  data={repoDateHeatmap.data}
+                  rowKey="gitRepo"
+                  dateKey="date"
+                  valueKey="totalTokens"
+                  labelFn={shortRepo}
+                  valueFmt={formatCompact}
+                  color={[59, 130, 246]}
+                  unitLabel="tokens"
+                  secondaryKey="sessionCount"
+                  secondaryLabel="sessions"
+                  secondaryFmt={formatNumber}
+                  tertiaryKey="turnCount"
+                  tertiaryLabel="turns"
+                  tertiaryFmt={formatNumber}
+                />
+              ) : (
+                <LoadingSpinner />
+              )}
+            </ChartCard>
+          </div>
         </div>
 
         {/* ヒートマップ行 2: リポジトリ ターン数 + メンバー セッション数 - 2カラム */}
         <div className="grid-2">
-          <ChartCard title="リポジトリ × 日付 ターン数">
-            {repoDateHeatmap.data ? (
-              <DateHeatmapTable
-                data={repoDateHeatmap.data}
-                rowKey="gitRepo"
-                dateKey="date"
-                valueKey="turnCount"
-                labelFn={shortRepo}
-                valueFmt={formatNumber}
-                color={[249, 115, 22]}
-                unitLabel="turns"
-                secondaryKey="sessionCount"
-                secondaryLabel="sessions"
-                secondaryFmt={formatNumber}
-                tertiaryKey="totalTokens"
-                tertiaryLabel="tokens"
-                tertiaryFmt={formatCompact}
-              />
-            ) : (
-              <LoadingSpinner />
-            )}
-          </ChartCard>
-          <ChartCard title="メンバー × 日付 セッション数">
-            {memberDateHeatmap.data ? (
-              <DateHeatmapTable
-                data={memberDateHeatmap.data}
-                rowKey="gitEmail"
-                dateKey="date"
-                valueKey="sessionCount"
-                labelFn={memberLabel}
-                valueFmt={formatNumber}
-                color={[34, 197, 94]}
-                unitLabel="sessions"
-                secondaryKey="totalTokens"
-                secondaryLabel="tokens"
-                secondaryFmt={formatCompact}
-                tertiaryKey="turnCount"
-                tertiaryLabel="turns"
-                tertiaryFmt={formatNumber}
-              />
-            ) : (
-              <LoadingSpinner />
-            )}
-          </ChartCard>
+          <div className="w-full min-w-0 overflow-hidden">
+            <ChartCard title="リポジトリ × 日付 ターン数">
+              {repoDateHeatmap.data ? (
+                <DateHeatmapTable
+                  data={repoDateHeatmap.data}
+                  rowKey="gitRepo"
+                  dateKey="date"
+                  valueKey="turnCount"
+                  labelFn={shortRepo}
+                  valueFmt={formatNumber}
+                  color={[249, 115, 22]}
+                  unitLabel="turns"
+                  secondaryKey="sessionCount"
+                  secondaryLabel="sessions"
+                  secondaryFmt={formatNumber}
+                  tertiaryKey="totalTokens"
+                  tertiaryLabel="tokens"
+                  tertiaryFmt={formatCompact}
+                />
+              ) : (
+                <LoadingSpinner />
+              )}
+            </ChartCard>
+          </div>
+          <div className="w-full min-w-0 overflow-hidden">
+            <ChartCard title="メンバー × 日付 セッション数">
+              {memberDateHeatmap.data ? (
+                <DateHeatmapTable
+                  data={memberDateHeatmap.data}
+                  rowKey="gitEmail"
+                  dateKey="date"
+                  valueKey="sessionCount"
+                  labelFn={memberLabel}
+                  valueFmt={formatNumber}
+                  color={[34, 197, 94]}
+                  unitLabel="sessions"
+                  secondaryKey="totalTokens"
+                  secondaryLabel="tokens"
+                  secondaryFmt={formatCompact}
+                  tertiaryKey="turnCount"
+                  tertiaryLabel="turns"
+                  tertiaryFmt={formatNumber}
+                />
+              ) : (
+                <LoadingSpinner />
+              )}
+            </ChartCard>
+          </div>
         </div>
 
         {/* ヒートマップ行 3: メンバー（トークン数 + ターン数）- 2カラム */}
         <div className="grid-2">
-          <ChartCard title="メンバー × 日付 トークン数">
-            {memberDateHeatmap.data ? (
-              <DateHeatmapTable
-                data={memberDateHeatmap.data}
-                rowKey="gitEmail"
-                dateKey="date"
-                valueKey="totalTokens"
-                labelFn={memberLabel}
-                valueFmt={formatCompact}
-                color={[147, 51, 234]}
-                unitLabel="tokens"
-                secondaryKey="sessionCount"
-                secondaryLabel="sessions"
-                secondaryFmt={formatNumber}
-                tertiaryKey="turnCount"
-                tertiaryLabel="turns"
-                tertiaryFmt={formatNumber}
-              />
-            ) : (
-              <LoadingSpinner />
-            )}
-          </ChartCard>
-          <ChartCard title="メンバー × 日付 ターン数">
-            {memberDateHeatmap.data ? (
-              <DateHeatmapTable
-                data={memberDateHeatmap.data}
-                rowKey="gitEmail"
-                dateKey="date"
-                valueKey="turnCount"
-                labelFn={memberLabel}
-                valueFmt={formatNumber}
-                color={[249, 115, 22]}
-                unitLabel="turns"
-                secondaryKey="sessionCount"
-                secondaryLabel="sessions"
-                secondaryFmt={formatNumber}
-                tertiaryKey="totalTokens"
-                tertiaryLabel="tokens"
-                tertiaryFmt={formatCompact}
-              />
-            ) : (
-              <LoadingSpinner />
-            )}
-          </ChartCard>
+          <div className="w-full min-w-0 overflow-hidden">
+            <ChartCard title="メンバー × 日付 トークン数">
+              {memberDateHeatmap.data ? (
+                <DateHeatmapTable
+                  data={memberDateHeatmap.data}
+                  rowKey="gitEmail"
+                  dateKey="date"
+                  valueKey="totalTokens"
+                  labelFn={memberLabel}
+                  valueFmt={formatCompact}
+                  color={[147, 51, 234]}
+                  unitLabel="tokens"
+                  secondaryKey="sessionCount"
+                  secondaryLabel="sessions"
+                  secondaryFmt={formatNumber}
+                  tertiaryKey="turnCount"
+                  tertiaryLabel="turns"
+                  tertiaryFmt={formatNumber}
+                />
+              ) : (
+                <LoadingSpinner />
+              )}
+            </ChartCard>
+          </div>
+          <div className="w-full min-w-0 overflow-hidden">
+            <ChartCard title="メンバー × 日付 ターン数">
+              {memberDateHeatmap.data ? (
+                <DateHeatmapTable
+                  data={memberDateHeatmap.data}
+                  rowKey="gitEmail"
+                  dateKey="date"
+                  valueKey="turnCount"
+                  labelFn={memberLabel}
+                  valueFmt={formatNumber}
+                  color={[249, 115, 22]}
+                  unitLabel="turns"
+                  secondaryKey="sessionCount"
+                  secondaryLabel="sessions"
+                  secondaryFmt={formatNumber}
+                  tertiaryKey="totalTokens"
+                  tertiaryLabel="tokens"
+                  tertiaryFmt={formatCompact}
+                />
+              ) : (
+                <LoadingSpinner />
+              )}
+            </ChartCard>
+          </div>
         </div>
       </div>
     </>

@@ -1,0 +1,55 @@
+name: Release installer to npm
+
+on:
+  push:
+    tags:
+      - 'installer-v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (semver, e.g. 0.1.0)'
+        required: true
+
+permissions:
+  contents: read
+  id-token: write  # for npm provenance (optional)
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: installer
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Test
+        run: npm test
+
+      - name: Set version (manual dispatch)
+        if: github.event_name == 'workflow_dispatch'
+        run: npm version "${{ github.event.inputs.version }}" --no-git-tag-version
+
+      - name: Build
+        run: npm run build
+
+      - name: Publish to npm (public)
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Summary
+        run: |
+          echo "### Published" >> "$GITHUB_STEP_SUMMARY"
+          echo "Package: $(jq -r .name package.json)" >> "$GITHUB_STEP_SUMMARY"
+          echo "Version: $(jq -r .version package.json)" >> "$GITHUB_STEP_SUMMARY"

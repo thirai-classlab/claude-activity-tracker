@@ -20,7 +20,7 @@ cd claude-activity-tracker/server
 npx tsx src/index.ts
 
 # 2. サーバー稼働確認
-curl http://localhost:3001/health
+curl http://localhost:3010/health
 # → {"status":"ok","timestamp":"..."}
 ```
 
@@ -160,22 +160,22 @@ UNION ALL SELECT 'session_events', COUNT(*) FROM session_events;
 
 ```bash
 # セッション一覧
-curl -s http://localhost:3001/api/dashboard/sessions | python3 -m json.tool
+curl -s http://localhost:3010/api/dashboard/sessions | python3 -m json.tool
 
 # 特定セッションの詳細（IDを指定）
-curl -s http://localhost:3001/api/dashboard/sessions/1 | python3 -m json.tool
+curl -s http://localhost:3010/api/dashboard/sessions/1 | python3 -m json.tool
 
 # ダッシュボード統計
-curl -s http://localhost:3001/api/dashboard/stats | python3 -m json.tool
+curl -s http://localhost:3010/api/dashboard/stats | python3 -m json.tool
 
 # フィルターオプション
-curl -s http://localhost:3001/api/dashboard/filters | python3 -m json.tool
+curl -s http://localhost:3010/api/dashboard/filters | python3 -m json.tool
 ```
 
 ブラウザで確認:
 
 ```
-http://localhost:3001/
+http://localhost:3010/
 ```
 
 ---
@@ -191,7 +191,7 @@ tail -f claude-activity-tracker/setup/hooks/debug.log
 [2026-02-13T09:00:00.000Z] [SessionStart] --- Hook started ---
 [2026-02-13T09:00:00.010Z] [SessionStart] stdin: {"session_id":"abc-123",...}
 [2026-02-13T09:00:00.200Z] [SessionStart] payload: {"session_uuid":"abc-123",...}
-[2026-02-13T09:00:00.201Z] [SessionStart] postToAPI: http://localhost:3001/api/hook/session-start
+[2026-02-13T09:00:00.201Z] [SessionStart] postToAPI: http://localhost:3010/api/hook/session-start
 [2026-02-13T09:00:00.220Z] [SessionStart] postToAPI response: 200 body={"ok":true}
 [2026-02-13T09:00:00.221Z] [SessionStart] --- Hook completed OK ---
 ```

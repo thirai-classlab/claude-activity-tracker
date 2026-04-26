@@ -386,6 +386,41 @@ function getToolInputSummary(name, input) {
 }
 
 // ---------------------------------------------------------------------------
+// Helpers for parseTranscript
+// ---------------------------------------------------------------------------
+
+/**
+ * Claude Code writes one JSONL row per content block even when all blocks
+ * belong to the same API response. Those rows carry the same message.id and
+ * an identical usage object. A user row is a real new turn only when it
+ * contributes at least one non-system-reminder text block (string content or
+ * array text blocks). tool_result-only rows, system-reminder-only rows, and
+ * hook-synthesized rows must not start a new turn.
+ */
+function isRealUserTurn(content) {
+  if (typeof content === 'string') {
+    // A raw string prompt is a real turn only if it is not a system-reminder.
+    return !content.trimStart().startsWith('<system-reminder>');
+  }
+  if (!Array.isArray(content) || content.length === 0) return false;
+
+  // If any non-text / non-tool_result block exists (image, etc.), treat as
+  // a real turn to stay safe.
+  const hasNonTextNonToolResult = content.some(
+    (b) => b && b.type !== 'text' && b.type !== 'tool_result'
+  );
+  if (hasNonTextNonToolResult) return true;
+
+  const textBlocks = content.filter((b) => b && b.type === 'text' && b.text);
+  if (textBlocks.length === 0) return false; // tool_result-only or empty
+
+  // Real turn iff at least one text block does NOT start with <system-reminder>.
+  return textBlocks.some(
+    (b) => !b.text.trimStart().startsWith('<system-reminder>')
+  );
+}
+
+// ---------------------------------------------------------------------------
 // parseTranscript — full JSONL transcript parser
 // ---------------------------------------------------------------------------
 function parseTranscript(transcriptPath) {
@@ -415,7 +450,30 @@ function parseTranscript(transcriptPath) {
   // Track tool_use blocks by ID for matching with tool_result
   const toolUseMap = new Map();
 
-  // Current turn index (0-based, incremented on each 'user' entry)
+  // Dedup sets — one API response can be serialized into multiple JSONL rows
+  // that share message.id + usage. We only want to count usage / push tool_use
+  // once per unique id.
+  //
+  // Hash key is `${message.id}:${requestId}` (ccusage alignment, spec 006 /
+  // D-014 B). When either id is missing, fall back to legacy "always count"
+  // path so older transcripts without ids still produce usage values. See
+  // docs/specs/006-ccusage-alignment.md and docs/specs/001-transcript-dedup.md.
+  const seenHashes = new Set();
+  const seenToolUseIds = new Set();
+
+  /**
+   * Build the dedup hash for an assistant entry.
+   *
+   * Returns `null` when either message.id or requestId is missing — caller
+   * treats null as "do not dedup" (legacy fallback) so transcripts that lack
+   * one of the ids still accumulate usage instead of dropping silently.
+   */
+  function buildDedupHash(messageId, requestId) {
+    if (!messageId || !requestId) return null;
+    return `${messageId}:${requestId}`;
+  }
+
+  // Current turn index (0-based, incremented on each real 'user' entry)
   let curTurnIndex = -1;
 
   // Per-turn response tracking
@@ -468,16 +526,31 @@ function parseTranscript(transcriptPath) {
     // --- assistant entries ---
     if (type === 'assistant') {
       const msg = obj.message || {};
+      const msgId = msg.id;
+      // requestId lives at the entry root, not under message (Claude Code
+      // transcript shape). Fall back to message.requestId in case the shape
+      // changes in the future.
+      const requestId = obj.requestId || msg.requestId || null;
+      const dedupHash = buildDedupHash(msgId, requestId);
+      const isDuplicateMessage = dedupHash !== null && seenHashes.has(dedupHash);
+
+      // ccusage-aligned: skip `<synthetic>` model rows entirely (no usage
+      // accumulation, no tool_use push). Synthetic rows are emitted by Claude
+      // Code for internal compaction / resume bookkeeping and must not
+      // contribute to user-facing usage. See docs/specs/006-ccusage-alignment.md.
+      const isSyntheticModel = msg.model === '<synthetic>';
 
       // Track last assistant timestamp for per-turn response completion time
-      if (obj.timestamp) curTurnLastAssistantTimestamp = obj.timestamp;
+      if (obj.timestamp && !isSyntheticModel) curTurnLastAssistantTimestamp = obj.timestamp;
 
-      // Model
-      if (msg.model) result.model = msg.model;
+      // Model — never overwrite the result-level model with '<synthetic>'.
+      if (msg.model && !isSyntheticModel) result.model = msg.model;
 
-      // Token usage
+      // Token usage — count exactly once per (message.id, requestId). Fall
+      // back to legacy "always add" path when either id is missing so older
+      // transcripts still work. Synthetic-model rows are skipped entirely.
       const usage = msg.usage;
-      if (usage) {
+      if (usage && !isDuplicateMessage && !isSyntheticModel) {
         result.tokens.input += usage.input_tokens || 0;
         result.tokens.output += usage.output_tokens || 0;
         result.tokens.cacheCreation += usage.cache_creation_input_tokens || 0;
@@ -490,21 +563,36 @@ function parseTranscript(transcriptPath) {
         curTurnCacheRead += usage.cache_read_input_tokens || 0;
       }
 
-      // Per-turn model and stop_reason
-      if (msg.model) curTurnModel = msg.model;
-      if (msg.stop_reason) curTurnStopReason = msg.stop_reason;
+      // Per-turn model and stop_reason — safe to update on every row (same
+      // message.id rows carry the same model/stop_reason anyway). Skip
+      // synthetic rows so the per-turn metadata reflects the real assistant.
+      if (msg.model && !isSyntheticModel) curTurnModel = msg.model;
+      if (msg.stop_reason && !isSyntheticModel) curTurnStopReason = msg.stop_reason;
 
-      // Tool use content blocks + text blocks
+      // Mark the hash as seen after we decided how to account for usage.
+      if (dedupHash !== null) seenHashes.add(dedupHash);
+
+      // Tool use + text content blocks.
+      //
+      // - text: always collect; Claude Code sometimes splits one API response
+      //   so text lives in a different row than tool_use (same message.id).
+      // - tool_use: dedup by block.id so duplicate rows or anomalous repeats
+      //   across different message.ids still land once.
+      // - synthetic-model rows are skipped entirely (ccusage alignment).
       const content = msg.content;
-      if (Array.isArray(content)) {
+      if (Array.isArray(content) && !isSyntheticModel) {
         for (const block of content) {
           if (block.type === 'text' && block.text) {
             curTurnTexts.push(block.text);
           }
 
           if (block.type === 'tool_use') {
+            const blockId = block.id || '';
+            if (blockId && seenToolUseIds.has(blockId)) continue;
+            if (blockId) seenToolUseIds.add(blockId);
+
             const toolEntry = {
-              id: block.id || '',
+              id: blockId,
               name: block.name || '',
               category: getToolCategory(block.name),
               inputSummary: getToolInputSummary(block.name, block.input),
@@ -513,7 +601,7 @@ function parseTranscript(transcriptPath) {
             };
             toolEntry.turnIndex = curTurnIndex;
             result.toolUses.push(toolEntry);
-            if (block.id) toolUseMap.set(block.id, toolEntry);
+            if (blockId) toolUseMap.set(blockId, toolEntry);
 
             // Track file changes for write/edit operations
             if (/^(Write|Edit|MultiEdit|NotebookEdit)$/.test(block.name) && block.input) {
@@ -534,24 +622,22 @@ function parseTranscript(transcriptPath) {
     // --- user entries ---
     if (type === 'user') {
       const content = obj.message?.content;
+      const isNewTurn = isRealUserTurn(content);
 
-      // Determine if this is a tool_result-only message (not a real user prompt)
-      const isToolResultOnly = Array.isArray(content) &&
-        content.length > 0 &&
-        content.every(block => block.type === 'tool_result');
-
-      if (isToolResultOnly) {
-        // tool_result messages are part of the same turn — don't split
-        // Just check for errors
-        for (const block of content) {
-          if (block.type === 'tool_result' && block.is_error) {
-            result.errorCount++;
-            const entry = toolUseMap.get(block.tool_use_id);
-            if (entry) {
-              entry.status = 'error';
-              entry.errorMessage = typeof block.content === 'string'
-                ? block.content.substring(0, 300)
-                : '';
+      if (!isNewTurn) {
+        // tool_result / system-reminder / hook synthesized rows — stay in the
+        // current turn. Still scan for tool_result errors.
+        if (Array.isArray(content)) {
+          for (const block of content) {
+            if (block.type === 'tool_result' && block.is_error) {
+              result.errorCount++;
+              const entry = toolUseMap.get(block.tool_use_id);
+              if (entry) {
+                entry.status = 'error';
+                entry.errorMessage = typeof block.content === 'string'
+                  ? block.content.substring(0, 300)
+                  : '';
+              }
             }
           }
         }
@@ -570,7 +656,7 @@ function parseTranscript(transcriptPath) {
           curTurnPromptText = content.replace(/\n/g, ' ').substring(0, 500);
         } else if (Array.isArray(content)) {
           const textBlocks = content.filter(b =>
-            b.type === 'text' && b.text && !b.text.trimStart().startsWith('<system-reminder>')
+            b && b.type === 'text' && b.text && !b.text.trimStart().startsWith('<system-reminder>')
           );
           if (textBlocks.length > 0) {
             curTurnPromptText = textBlocks.map(b => b.text).join(' ').replace(/\n/g, ' ').substring(0, 500);

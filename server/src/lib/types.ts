@@ -351,6 +351,29 @@ export interface PromptFeedResponse {
   hasMore: boolean;
 }
 
+// ─── Model Pricing Registry ────────────────────────────────────────────────
+// Spec: docs/specs/002-model-pricing-registry.md
+// Mirrors `ModelPricingRecord` from `server/src/services/pricingRepository.ts`.
+
+export interface ModelInfo {
+  modelId: string;
+  family: string;
+  tier: string;
+  inputPerMtok: number;
+  outputPerMtok: number;
+  cacheWritePerMtok: number;
+  cacheReadPerMtok: number;
+  contextWindow: number | null;
+  maxOutput: number | null;
+  source: string;
+  verified: boolean;
+  deprecated: boolean;
+}
+
+export interface ModelsResponse {
+  models: ModelInfo[];
+}
+
 // ─── Session Classification ────────────────────────────────────────────────
 
 export type SessionClassification = 'quick-fix' | 'focused' | 'exploration' | 'heavy';

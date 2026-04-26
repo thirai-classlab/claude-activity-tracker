@@ -26,6 +26,7 @@ RUN npx prisma generate
 
 # Copy source code and configs
 COPY src/ ./src/
+COPY scripts/ ./scripts/
 COPY views/ ./views/
 COPY public/ ./public/
 COPY tsconfig.json tsconfig.server.json ./
@@ -82,4 +83,4 @@ ENV NODE_ENV=production
 EXPOSE 3001
 
 # Run Prisma db push then start the server
-CMD ["sh", "-c", "npx prisma db push --skip-generate && node dist/index.js"]
+CMD ["sh", "-c", "npx prisma db push --skip-generate && node dist/src/index.js"]

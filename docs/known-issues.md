@@ -4,6 +4,8 @@
 
 ## 目次
 
+- [🔔 データ集計の訂正（2026-04-25）](#-データ集計の訂正2026-04-25)
+- [タイムゾーン集計（2026-04-27〜 JST）](#タイムゾーン集計2026-04-27-jst)
 - [MariaDB 固有の注意](#mariadb-固有の注意)
 - [API キー認証](#api-キー認証)
 - [Windows (PowerShell) 固有の注意](#windows-powershell-固有の注意)
@@ -12,6 +14,26 @@
 - [コスト計算](#コスト計算)
 - [settings.json のフック設定](#settingsjson-のフック設定)
 - [トラブルシューティング](#トラブルシューティング)
+
+---
+
+## 🔔 データ集計の訂正（2026-04-25）
+
+2026-04-25 以前のセッションはトランスクリプトパーサ由来の重複加算バグにより、**トークン・コスト・ターン数が 1.7〜62 倍に膨張**していた。詳細と対応状況:
+
+- 原因・影響範囲: [`docs/announcements/2026-04-data-correction.md`](announcements/2026-04-data-correction.md)
+- 技術詳細: [`docs/specs/001-transcript-dedup.md`](specs/001-transcript-dedup.md)
+- バックフィル方針: 行わず、修正日以前のデータに UI バナーを付与（[`docs/decisions/resolved.md`](decisions/resolved.md) D-001 参照）
+
+---
+
+## タイムゾーン集計（2026-04-27〜 JST）
+
+ダッシュボードの日次集計は `APP_TIMEZONE`（既定 `+09:00`）で JST に変換して算出する。生データ（sessions / turns / tool_uses）は UTC のまま保持。
+
+- 設計: [`docs/specs/009-timezone-aggregation.md`](specs/009-timezone-aggregation.md)
+- 判断履歴: [`docs/decisions/resolved.md`](decisions/resolved.md) D-015
+- 影響: 過去日付の数値が JST 23-24 時台の作業分だけ ±1 日シフトする可能性あり（合計値は不変）。海外メンバーは `APP_TIMEZONE` を `+00:00` 等に上書き可能
 
 ---
 
@@ -108,7 +130,7 @@
 
 | 症状 | 原因 | 対処 |
 |------|------|------|
-| ダッシュボードが空 | APIサーバー未起動 or フック未設定 | `curl localhost:3001/health` + `cat ~/.claude/settings.json` |
+| ダッシュボードが空 | APIサーバー未起動 or フック未設定 | `curl localhost:3010/health` + `cat ~/.claude/settings.json` |
 | BigInt エラー | MariaDB の SUM が BigInt を返す | `CAST(... AS DOUBLE)` を SQL に追加 |
 | config.json パースエラー | UTF-8 BOM 付き | BOMなしで再保存、または `stripBOM()` 確認 |
 | フックがタイムアウト | transcript が大きい / API サーバー遅延 | `config.json` の debug を有効にしてログ確認 |

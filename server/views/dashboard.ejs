@@ -969,6 +969,42 @@
   <!-- ===== Main Content ===== -->
   <main class="main-content">
 
+    <!-- Metrics correction banner (legacy copy of Next.js MetricsCorrectionBanner) -->
+    <div
+      id="metrics-correction-banner"
+      role="note"
+      aria-label="データ集計訂正のお知らせ"
+      data-cutoff="<%= typeof metricsFixedSince !== 'undefined' ? metricsFixedSince : '2026-04-25' %>"
+      style="margin:16px 28px 0; padding:12px 16px; border-radius:10px; background-color:rgba(245,158,11,0.12); border:1px solid rgba(245,158,11,0.45); color:#fde68a; font-size:13px; line-height:1.6;"
+    >
+      <strong style="margin-right:6px;">⚠️ データ集計の訂正:</strong>
+      <%= typeof metricsFixedSince !== 'undefined' ? metricsFixedSince : '2026-04-25' %> 以前のセッションはパーサバグによりトークン・コスト・ターン数が 1.7〜62 倍に膨張しています。KPI 比較は修正日以降のデータで行ってください。
+      <a href="/docs/announcements/2026-04-data-correction.md" target="_blank" rel="noopener noreferrer" style="margin-left:8px; color:#fcd34d; text-decoration:underline; white-space:nowrap;">詳細</a>
+    </div>
+    <script>
+      (function() {
+        var banner = document.getElementById('metrics-correction-banner');
+        if (!banner) return;
+        var cutoffStr = banner.dataset.cutoff || '2026-04-25';
+        var cutoff = new Date(cutoffStr);
+        function applyVisibility() {
+          var fromEl = document.getElementById('filter-from');
+          if (!fromEl || !fromEl.value) { banner.style.display = ''; return; }
+          var from = new Date(fromEl.value);
+          if (!isNaN(from.getTime()) && from >= cutoff) {
+            banner.style.display = 'none';
+          } else {
+            banner.style.display = '';
+          }
+        }
+        document.addEventListener('DOMContentLoaded', function() {
+          var fromEl = document.getElementById('filter-from');
+          if (fromEl) fromEl.addEventListener('change', applyVisibility);
+          applyVisibility();
+        });
+      })();
+    </script>
+
     <!-- Global Filter Bar -->
     <div class="filter-bar" id="filter-bar">
       <div class="filter-group">

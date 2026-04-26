@@ -36,11 +36,50 @@ export interface ParsedTranscript {
 }
 
 /**
+ * Per-parse dedup context.
+ *
+ * Claude Code's transcript JSONL writes one line per content block when an
+ * assistant message contains multiple blocks (e.g. text + tool_use + tool_use).
+ * All lines share the same `message.id` and carry an identical `usage` payload.
+ * Without dedup, naive `+=` accumulation inflates tokens / tool_use counts by
+ * the per-response block count (observed 1.7x - 2.0x, up to 62x).
+ *
+ * Hash key is `${message.id}:${requestId}` (ccusage alignment, spec 006).
+ * Falls back to legacy "always count" path when either id is missing.
+ *
+ * Specs:
+ *   - docs/specs/001-transcript-dedup.md
+ *   - docs/specs/006-ccusage-alignment.md
+ */
+interface DedupContext {
+  seenHashes: Set<string>;
+  seenToolUseIds: Set<string>;
+}
+
+/**
+ * Build the dedup hash for an assistant entry.
+ *
+ * Returns `null` when either `message.id` or `requestId` is missing — caller
+ * treats null as "do not dedup" (legacy fallback) so older transcripts
+ * without ids still accumulate usage instead of dropping silently.
+ *
+ * Mirrors ccusage `createUniqueHash` (apps/ccusage/src/data-loader.ts).
+ */
+function buildDedupHash(
+  messageId: string | null,
+  requestId: string | null,
+): string | null {
+  if (!messageId || !requestId) return null;
+  return `${messageId}:${requestId}`;
+}
+
+/**
  * Parse a Claude Code transcript JSONL file and extract structured data.
  * Each line in the file is a JSON object representing a transcript entry.
  *
- * This is a server-side parser intended for dev/testing purposes.
- * In production, the hook scripts perform the parsing and send pre-parsed data.
+ * This is a server-side parser intended for dev/testing purposes and for
+ * future backfill scripts. It mirrors the dedup behavior of
+ * `setup/hooks/shared/utils.js::parseTranscript`.
  */
 export function parseTranscriptFile(transcriptPath: string): ParsedTranscript {
   const result: ParsedTranscript = {
@@ -63,6 +102,11 @@ export function parseTranscriptFile(transcriptPath: string): ParsedTranscript {
   const content = fs.readFileSync(transcriptPath, 'utf-8');
   const lines = content.split('\n').filter((line) => line.trim());
 
+  const dedup: DedupContext = {
+    seenHashes: new Set<string>(),
+    seenToolUseIds: new Set<string>(),
+  };
+
   for (const line of lines) {
     let entry: Record<string, unknown>;
     try {
@@ -75,12 +119,12 @@ export function parseTranscriptFile(transcriptPath: string): ParsedTranscript {
 
     switch (type) {
       case 'assistant': {
-        processAssistantEntry(entry, result);
+        processAssistantEntry(entry, result, dedup);
         break;
       }
       case 'user':
       case 'human': {
-        result.turnCount++;
+        processUserEntry(entry, result);
         break;
       }
       case 'tool_result': {
@@ -123,11 +167,35 @@ export function parseTranscriptFile(transcriptPath: string): ParsedTranscript {
 
 function processAssistantEntry(
   entry: Record<string, unknown>,
-  result: ParsedTranscript
+  result: ParsedTranscript,
+  dedup: DedupContext
 ): void {
-  // Extract usage data
   const message = entry.message as Record<string, unknown> | undefined;
-  if (message) {
+  if (!message) return;
+
+  const messageId = typeof message.id === 'string' ? message.id : null;
+  // requestId is at the entry root in Claude Code transcripts; fall back to
+  // message.requestId if the shape changes. Missing → no dedup (legacy U4).
+  const entryRequestId = typeof entry.requestId === 'string' ? entry.requestId : null;
+  const messageRequestId = typeof message.requestId === 'string' ? message.requestId : null;
+  const requestId = entryRequestId ?? messageRequestId;
+  const dedupHash = buildDedupHash(messageId, requestId);
+  const isDuplicateMessage = dedupHash !== null && dedup.seenHashes.has(dedupHash);
+
+  // ccusage-aligned: skip `<synthetic>` model rows entirely. They're emitted
+  // by Claude Code for compaction / resume bookkeeping and must not contribute
+  // to user-facing usage. See docs/specs/006-ccusage-alignment.md.
+  const isSyntheticModel = message.model === '<synthetic>';
+  if (isSyntheticModel) return;
+
+  // Usage is only counted the first time a given (messageId, requestId) hash
+  // is seen. If either id is missing (legacy / malformed row), fall through
+  // to the legacy "always count" path to avoid regressions (U4).
+  if (!isDuplicateMessage) {
+    if (dedupHash !== null) {
+      dedup.seenHashes.add(dedupHash);
+    }
+
     const usage = message.usage as Record<string, unknown> | undefined;
     if (usage) {
       result.tokens.input += (usage.input_tokens as number) || 0;
@@ -136,40 +204,112 @@ function processAssistantEntry(
       result.tokens.cacheRead += (usage.cache_read_input_tokens as number) || 0;
     }
 
-    // Extract model
     if (message.model && !result.model) {
       result.model = message.model as string;
     }
-
-    // Extract tool_use blocks from content
-    const content = message.content as unknown[];
-    if (Array.isArray(content)) {
-      for (const block of content) {
-        const blockObj = block as Record<string, unknown>;
-        if (blockObj.type === 'tool_use') {
-          const toolName = (blockObj.name as string) || 'unknown';
-          const toolInput = (blockObj.input as Record<string, unknown>) || {};
-          const mcpInfo = parseMcpToolName(toolName);
-
-          const toolUse: ParsedToolUse = {
-            toolUseUuid: (blockObj.id as string) || '',
-            toolName,
-            toolCategory: getToolCategory(toolName),
-            toolInputSummary: getToolInputSummary(toolName, toolInput),
-            isMcp: mcpInfo.isMcp,
-            mcpServer: mcpInfo.mcpServer,
-            status: 'success', // updated later if tool_result has error
-            errorMessage: null,
-          };
-
-          result.toolUses.push(toolUse);
-
-          // Extract file changes from Write/Edit tools
-          extractFileChanges(toolName, toolInput, result);
-        }
-      }
-    }
   }
+
+  // Content blocks are walked for every row (even duplicates), because
+  // Claude Code sometimes splits text + tool_use into separate rows that share
+  // the same message.id. tool_use blocks are still deduped by block.id (U9),
+  // and duplicate text rows are naturally harmless for the fields this parser
+  // tracks. This mirrors `shared/utils.js::parseTranscript` behavior.
+  const content = message.content as unknown[];
+  if (!Array.isArray(content)) return;
+
+  for (const block of content) {
+    const blockObj = block as Record<string, unknown>;
+    if (blockObj.type !== 'tool_use') continue;
+
+    const toolUseId = typeof blockObj.id === 'string' ? blockObj.id : '';
+    if (toolUseId && dedup.seenToolUseIds.has(toolUseId)) {
+      continue;
+    }
+    if (toolUseId) {
+      dedup.seenToolUseIds.add(toolUseId);
+    }
+
+    const toolName = (blockObj.name as string) || 'unknown';
+    const toolInput = (blockObj.input as Record<string, unknown>) || {};
+    const mcpInfo = parseMcpToolName(toolName);
+
+    const toolUse: ParsedToolUse = {
+      toolUseUuid: toolUseId,
+      toolName,
+      toolCategory: getToolCategory(toolName),
+      toolInputSummary: getToolInputSummary(toolName, toolInput),
+      isMcp: mcpInfo.isMcp,
+      mcpServer: mcpInfo.mcpServer,
+      status: 'success', // updated later if tool_result has error
+      errorMessage: null,
+    };
+
+    result.toolUses.push(toolUse);
+
+    // Extract file changes from Write/Edit tools
+    extractFileChanges(toolName, toolInput, result);
+  }
+}
+
+/**
+ * Count a user-side row as a new turn only when it represents a real prompt.
+ *
+ * Skip:
+ *   - rows whose content is exclusively tool_result blocks (tool call return)
+ *   - rows whose textual content is entirely system-reminder injected text
+ *     (hook output / compact / resume synthetic messages)
+ *
+ * This mirrors `shared/utils.js` turn detection and covers U5 / U6 / U7.
+ */
+function processUserEntry(entry: Record<string, unknown>, result: ParsedTranscript): void {
+  const message = entry.message as Record<string, unknown> | undefined;
+  const content = message?.content;
+
+  if (typeof content === 'string') {
+    if (content.trimStart().startsWith('<system-reminder>')) {
+      return;
+    }
+    result.turnCount++;
+    return;
+  }
+
+  if (Array.isArray(content)) {
+    if (content.length === 0) {
+      result.turnCount++;
+      return;
+    }
+
+    const isToolResultOnly = content.every(
+      (b) => (b as Record<string, unknown>).type === 'tool_result'
+    );
+    if (isToolResultOnly) {
+      return;
+    }
+
+    // Count as a turn only if at least one text block is not a system-reminder.
+    const textBlocks = content.filter(
+      (b) => (b as Record<string, unknown>).type === 'text'
+    ) as Array<Record<string, unknown>>;
+
+    if (textBlocks.length === 0) {
+      // Non-tool_result, non-text content (e.g. image-only) still counts as a turn.
+      result.turnCount++;
+      return;
+    }
+
+    const hasRealText = textBlocks.some((tb) => {
+      const text = String(tb.text || '');
+      return !text.trimStart().startsWith('<system-reminder>');
+    });
+
+    if (hasRealText) {
+      result.turnCount++;
+    }
+    return;
+  }
+
+  // Fallback: unknown shape → count as turn (historical behavior)
+  result.turnCount++;
 }
 
 function processToolResultEntry(

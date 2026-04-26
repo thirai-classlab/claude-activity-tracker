@@ -25,14 +25,6 @@ export const MODEL_COLORS: Record<string, string> = {
   haiku: COLORS.haiku,
 };
 
-// ─── Cost Rates (per 1M tokens) ──────────────────────────────────────────
-
-export const COST_RATES: Record<string, { input: number; output: number; cacheWrite: number; cacheRead: number }> = {
-  opus:   { input: 15,   output: 75,  cacheWrite: 18.75, cacheRead: 1.50 },
-  sonnet: { input: 3,    output: 15,  cacheWrite: 3.75,  cacheRead: 0.30 },
-  haiku:  { input: 0.80, output: 4,   cacheWrite: 1.00,  cacheRead: 0.08 },
-};
-
 // ─── Session Classification Thresholds ───────────────────────────────────
 
 export const SESSION_THRESHOLDS = {
@@ -76,3 +68,15 @@ export const TOOL_CATEGORY_COLORS: Record<string, string> = {
   agent: '#06b6d4',
   other: '#64748b',
 };
+
+// ─── Metrics Correction Cutoff ───────────────────────────────────────────
+// 2026-04-25 以前のセッションはパーサバグによりトークン・コスト・ターン数が
+// 1.7〜62 倍に膨張している。バックフィルは行わないため、この日付以降のデータ
+// のみ KPI 比較に使用すること。
+// 詳細: docs/announcements/2026-04-data-correction.md
+// docs/specs/001-transcript-dedup.md (P1-T5)
+
+export const METRICS_FIXED_SINCE: string =
+  process.env.NEXT_PUBLIC_METRICS_FIXED_SINCE ??
+  process.env.METRICS_FIXED_SINCE ??
+  '2026-04-25';

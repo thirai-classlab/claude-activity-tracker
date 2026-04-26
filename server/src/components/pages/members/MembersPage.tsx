@@ -13,6 +13,9 @@ import { CsvExportButton } from '@/components/shared/CsvExportButton';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { ErrorDisplay } from '@/components/shared/ErrorDisplay';
 import { MatrixHeatmap } from '@/components/charts/MatrixHeatmap';
+import { MemberCostBarChart } from '@/components/charts/MemberCostBarChart';
+import { SmallMultiplesTokens } from '@/components/charts/SmallMultiplesTokens';
+import { MemberTokensTable } from './MemberTokensTable';
 import { useFilters } from '@/hooks/useFilters';
 import { useMemberStats, useStats, useMemberDateHeatmap, useProductivityMetrics } from '@/hooks/useApi';
 import { formatCost, formatNumber, formatCompact, formatDateShort } from '@/lib/formatters';
@@ -123,6 +126,25 @@ export function MembersPage() {
     }
     return m;
   }, [productivity.data]);
+
+  // Members sorted by cost desc — shared between the cost ranking bar chart and
+  // the small-multiples grid so the X-axis order stays consistent.
+  // spec: docs/specs/005-meaningful-charts.md (P5-T1/T2)
+  const membersByCost = useMemo<MemberStatsItem[]>(() => {
+    const arr = [...(members.data || [])];
+    arr.sort((a, b) => (Number(b.estimatedCost) || 0) - (Number(a.estimatedCost) || 0));
+    return arr;
+  }, [members.data]);
+
+  const costBarData = useMemo(
+    () =>
+      membersByCost.map(m => ({
+        gitEmail: m.gitEmail,
+        displayName: m.displayName,
+        totalCost: Number(m.estimatedCost) || 0,
+      })),
+    [membersByCost],
+  );
 
   if (members.isLoading) return <LoadingSpinner />;
   if (members.error) return <ErrorDisplay retry={() => members.refetch()} />;
@@ -259,6 +281,35 @@ export function MembersPage() {
             color="amber"
           />
         </KpiGrid>
+
+        {/* Cost ranking — main chart (主役) */}
+        <ChartCard
+          title="メンバー別 $ コストランキング"
+          subtitle="累積コスト降順 — 量ではなく価値で序列化"
+          height={320}
+        >
+          <MemberCostBarChart members={costBarData} />
+        </ChartCard>
+
+        {/* Small multiples — 4 token kinds with independent Y axes */}
+        <ChartCard
+          title="トークン種別ごとの偏り"
+          subtitle="input / output / cache_create / cache_read を独立スケールで比較"
+        >
+          <SmallMultiplesTokens members={membersByCost} />
+        </ChartCard>
+
+        {/* Detailed sortable token table */}
+        <ChartCard
+          title="メンバー × トークン詳細"
+          subtitle="列ヘッダクリックでソート — セル hover で正確な値"
+        >
+          <MemberTokensTable
+            members={data}
+            productivity={prodMap}
+            onRowClick={(m) => router.push(`/members/${encodeURIComponent(m.gitEmail)}`)}
+          />
+        </ChartCard>
 
         {/* Heatmap: Token count */}
         <ChartCard title="メンバー × 日付 トークン数">

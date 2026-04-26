@@ -1,0 +1,68 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__serena__activate_project",
+      "mcp__serena__list_memories",
+      "mcp__serena__write_memory",
+      "mcp__serena__read_memory",
+      "Bash(npm run:*)",
+      "Read(//tmp/**)",
+      "Bash(mkdir -p ~/.claude/skills/aidd-tracker)",
+      "Read(//Users/t.hirai/.claude/skills/**)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|Read|Grep|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/delegation-guard.sh\"",
+            "timeout": 5,
+            "statusMessage": "委譲ルール確認中..."
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/pending-reminder.sh\"",
+            "timeout": 5,
+            "statusMessage": "判断待ち項目を確認中..."
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/pending-display.sh\"",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/sound-main-complete.sh\"",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/sound-subagent-complete.sh\"",
+            "timeout": 3
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -19,6 +19,7 @@ import type {
   FilterOptionsResponse,
   PromptFeedResponse,
   AnalysisLogsResponse,
+  ModelsResponse,
 } from './types';
 
 // ─── API Base URL ────────────────────────────────────────────────────────
@@ -65,6 +66,35 @@ async function fetchApi<T>(path: string, filters?: DashboardFilters, extra?: Rec
     throw new Error(`API error: ${res.status} ${res.statusText}`);
   }
   return res.json();
+}
+
+async function mutateApi<T>(
+  path: string,
+  method: 'POST' | 'DELETE',
+  body?: unknown,
+): Promise<T> {
+  const url = `${API_BASE}${path}`;
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const apiKey = getApiKey();
+  if (apiKey) {
+    headers['X-API-Key'] = apiKey;
+  }
+  const res = await fetch(url, {
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let message = `API error: ${res.status} ${res.statusText}`;
+    try {
+      const errBody = (await res.json()) as { error?: string };
+      if (errBody?.error) message = errBody.error;
+    } catch {
+      // ignore JSON parse failure
+    }
+    throw new Error(message);
+  }
+  return res.json() as Promise<T>;
 }
 
 // ─── API Functions ───────────────────────────────────────────────────────
@@ -126,4 +156,45 @@ export const api = {
 
   getAnalysisLogs: (email: string, limit?: number) =>
     fetchApi<AnalysisLogsResponse>('/analysis-logs', undefined, { email, limit }),
+
+  getModels: (includeDeprecated?: boolean) =>
+    fetchApi<ModelsResponse>('/models', undefined, {
+      includeDeprecated: includeDeprecated ? 'true' : undefined,
+    }),
+
+  // ─── Manual pricing override (admin UI) ───────────────────────────────────
+  // Spec: docs/specs/002-model-pricing-registry.md
+  upsertModelOverride: (input: ModelOverrideInput) =>
+    mutateApi<ModelOverrideUpsertResponse>('/models/override', 'POST', input),
+
+  deleteModelOverride: (modelId: string) =>
+    mutateApi<ModelOverrideDeleteResponse>(
+      `/models/override/${encodeURIComponent(modelId)}`,
+      'DELETE',
+    ),
 };
+
+// ─── Types for the mutation helpers above ──────────────────────────────────
+
+export interface ModelOverrideInput {
+  modelId: string;
+  family?: string;
+  tier?: string;
+  inputPerMtok: number;
+  outputPerMtok: number;
+  cacheWritePerMtok: number;
+  cacheReadPerMtok: number;
+  contextWindow?: number | null;
+  notes?: string;
+}
+
+export interface ModelOverrideUpsertResponse {
+  ok: true;
+  modelId: string;
+}
+
+export interface ModelOverrideDeleteResponse {
+  ok: true;
+  modelId: string;
+  removed: number;
+}

@@ -1,13 +1,92 @@
 import prisma from '../lib/prisma';
 import { Prisma } from '@prisma/client';
+import {
+  getPricing,
+  getAllModels as repoGetAllModels,
+  upsertPricing as repoUpsertPricing,
+  deleteOverride as repoDeleteOverride,
+  type ModelPricingRecord,
+} from './pricingRepository';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
+
+/**
+ * Application timezone for date / hour / day-of-week aggregation in raw SQL.
+ *
+ * MariaDB stores `DATETIME` values without TZ metadata; the project writes
+ * them in UTC (Prisma serializes JS `Date` to ISO UTC). Aggregations like
+ * `DATE(s.started_at)` therefore bucket rows by UTC day, which means JST
+ * 23:00–24:00 work shows up "yesterday" on the dashboard. We fix this by
+ * wrapping every datetime column in `CONVERT_TZ(col, '+00:00', :tz)` before
+ * applying `DATE` / `HOUR` / `DAYOFWEEK`.
+ *
+ * Source-of-truth for the offset is the `APP_TIMEZONE` env var (default
+ * `+09:00` for the Tokyo team). It is *not* user input — it is set once at
+ * process start by ops, so it is safe to interpolate into SQL. `tzExpr` /
+ * `tzDate` are private helpers and are never called with attacker-controlled
+ * input.
+ *
+ * Spec: docs/draft/009-timezone-aggregation.md (case A)
+ */
+const APP_TIMEZONE = process.env.APP_TIMEZONE ?? '+09:00';
+
+/**
+ * SQL expression: a datetime column converted from UTC into APP_TIMEZONE.
+ *
+ * Exported for unit testing only — runtime callers should keep using it
+ * inside this module. The returned string is meant to be inlined directly
+ * into a `$queryRawUnsafe` SQL string.
+ */
+export function tzExpr(col: string): string {
+  return `CONVERT_TZ(${col}, '+00:00', '${APP_TIMEZONE}')`;
+}
+
+/** SQL expression: the date (YYYY-MM-DD) of `col` in APP_TIMEZONE. */
+export function tzDate(col: string): string {
+  return `DATE(${tzExpr(col)})`;
+}
+
+/** Internal accessor used by tests to verify env wiring. */
+export function getAppTimezone(): string {
+  return APP_TIMEZONE;
+}
 
 /** Convert DATE column (returned as Date object by Prisma) to YYYY-MM-DD string */
 function toDateStr(v: unknown): string {
   if (v instanceof Date) return v.toISOString().slice(0, 10);
   if (typeof v === 'string') return v.slice(0, 10);
   return String(v);
+}
+
+/**
+ * Compute cache hit ratio (a.k.a. "cacheEfficiency" KPI).
+ *
+ * Definition: cache_read / (input + cache_creation + cache_read).
+ *
+ * This is the share of total input-side tokens that were served from the
+ * Anthropic prompt cache instead of being billed at the standard input rate.
+ * The result is guaranteed to satisfy `0 <= ratio <= 1` because the numerator
+ * is one of the addends in the denominator (assuming non-negative inputs).
+ *
+ * Returns 0 when the denominator is 0 (no input-side tokens recorded yet) to
+ * avoid divide-by-zero NaN propagation in downstream rounding.
+ *
+ * Spec: docs/specs/004-phase1-remaining-bugs.md (bug #12)
+ */
+export function computeCacheEfficiency(
+  inputTokens: number,
+  cacheCreationTokens: number,
+  cacheReadTokens: number,
+): number {
+  // Defensive: clamp negatives to 0 so a malformed row cannot produce a
+  // ratio outside [0, 1] and we never feed NaN into the rounding step.
+  const input = Math.max(0, inputTokens || 0);
+  const cacheCreation = Math.max(0, cacheCreationTokens || 0);
+  const cacheRead = Math.max(0, cacheReadTokens || 0);
+
+  const denominator = input + cacheCreation + cacheRead;
+  if (denominator <= 0) return 0;
+  return cacheRead / denominator;
 }
 
 // ─── Filter Types ───────────────────────────────────────────────────────────
@@ -18,27 +97,6 @@ export interface DashboardFilters {
   member?: string; // git_email (primary member identifier)
   repo?: string;   // git_repo
   model?: string;  // model name
-}
-
-// ─── Cost Table (per 1M tokens) ─────────────────────────────────────────────
-
-const COST_TABLE: Record<string, { input: number; output: number; cacheWrite: number; cacheRead: number }> = {
-  'claude-opus-4-6':              { input: 15,   output: 75,  cacheWrite: 18.75, cacheRead: 1.50 },
-  'claude-sonnet-4-5-20250929':   { input: 3,    output: 15,  cacheWrite: 3.75,  cacheRead: 0.30 },
-  'claude-haiku-4-5-20251001':    { input: 0.80, output: 4,   cacheWrite: 1.00,  cacheRead: 0.08 },
-};
-
-function getCostRates(model: string | null) {
-  if (!model) return COST_TABLE['claude-sonnet-4-5-20250929'];
-
-  for (const [key, rates] of Object.entries(COST_TABLE)) {
-    if (model.includes(key) || key.includes(model)) return rates;
-  }
-  if (model.includes('opus'))   return COST_TABLE['claude-opus-4-6'];
-  if (model.includes('sonnet')) return COST_TABLE['claude-sonnet-4-5-20250929'];
-  if (model.includes('haiku'))  return COST_TABLE['claude-haiku-4-5-20251001'];
-
-  return COST_TABLE['claude-sonnet-4-5-20250929'];
 }
 
 // ─── Where-clause Builder ───────────────────────────────────────────────────
@@ -75,12 +133,16 @@ function buildRawWhere(filters: DashboardFilters, tableAlias = 's') {
   const params: any[] = [];
 
   if (filters.from) {
-    conditions.push(`${tableAlias}.started_at >= ?`);
-    params.push(new Date(filters.from));
+    // Compare in APP_TIMEZONE so a JST date string (YYYY-MM-DD) means
+    // "00:00 JST that day", which corresponds to 15:00 UTC the previous
+    // day. CONVERT_TZ on the LHS lets us pass the bare date string as-is.
+    conditions.push(`${tzExpr(`${tableAlias}.started_at`)} >= ?`);
+    params.push(filters.from);
   }
   if (filters.to) {
-    conditions.push(`${tableAlias}.started_at <= ?`);
-    params.push(new Date(filters.to + 'T23:59:59Z'));
+    // Inclusive upper bound: "<= 'YYYY-MM-DD 23:59:59'" in APP_TIMEZONE.
+    conditions.push(`${tzExpr(`${tableAlias}.started_at`)} <= ?`);
+    params.push(filters.to + ' 23:59:59');
   }
   if (filters.member) {
     conditions.push(`m.git_email = ?`);
@@ -99,6 +161,95 @@ function buildRawWhere(filters: DashboardFilters, tableAlias = 's') {
   return { whereClause, params };
 }
 
+// ─── Pure aggregation helpers (extracted for unit testing) ─────────────────
+
+/**
+ * Shape of the `_sum` payload returned by Prisma's `session.aggregate`
+ * when both main agent (`total_*`) and subagent (`subagent_*`) columns are
+ * requested. All fields are nullable because `_sum` is null when no rows
+ * match the where clause.
+ *
+ * Spec: docs/specs/004-phase1-remaining-bugs.md (bug #4)
+ *       docs/tasks/phase-1.5-t5.md
+ */
+export interface SessionSplitSums {
+  totalInputTokens?: number | null;
+  totalOutputTokens?: number | null;
+  totalCacheCreationTokens?: number | null;
+  totalCacheReadTokens?: number | null;
+  estimatedCost?: number | null;
+  subagentInputTokens?: number | null;
+  subagentOutputTokens?: number | null;
+  subagentCacheCreationTokens?: number | null;
+  subagentCacheReadTokens?: number | null;
+  subagentEstimatedCost?: number | null;
+}
+
+export interface SessionGrandTotals {
+  // Grand totals (main + subagent) — preserved under the historical key
+  // names so existing UIs continue to work.
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCacheCreationTokens: number;
+  totalCacheReadTokens: number;
+  totalCost: number;
+  // Main-only breakdown
+  mainInputTokens: number;
+  mainOutputTokens: number;
+  mainCacheCreationTokens: number;
+  mainCacheReadTokens: number;
+  mainCost: number;
+  // Subagent-only breakdown
+  subagentInputTokens: number;
+  subagentOutputTokens: number;
+  subagentCacheCreationTokens: number;
+  subagentCacheReadTokens: number;
+  subagentCost: number;
+}
+
+/**
+ * Combine the `_sum` slice of a Prisma session aggregate into the three-tier
+ * (main / subagent / grand total) breakdown used by every dashboard endpoint.
+ *
+ * Bug #4 fix (spec 004): the `total_*` columns now hold MAIN AGENT values
+ * only, and `subagent_*` columns hold the subagent slice. Grand total is
+ * `main + subagent`, computed at the read site by this helper.
+ *
+ * The function is pure and tolerant of nulls (Prisma returns null sums when
+ * there are no rows matching the where clause).
+ */
+export function computeSessionGrandTotals(sums: SessionSplitSums): SessionGrandTotals {
+  const mainInputTokens = sums.totalInputTokens ?? 0;
+  const mainOutputTokens = sums.totalOutputTokens ?? 0;
+  const mainCacheCreationTokens = sums.totalCacheCreationTokens ?? 0;
+  const mainCacheReadTokens = sums.totalCacheReadTokens ?? 0;
+  const mainCost = sums.estimatedCost ?? 0;
+
+  const subagentInputTokens = sums.subagentInputTokens ?? 0;
+  const subagentOutputTokens = sums.subagentOutputTokens ?? 0;
+  const subagentCacheCreationTokens = sums.subagentCacheCreationTokens ?? 0;
+  const subagentCacheReadTokens = sums.subagentCacheReadTokens ?? 0;
+  const subagentCost = sums.subagentEstimatedCost ?? 0;
+
+  return {
+    totalInputTokens: mainInputTokens + subagentInputTokens,
+    totalOutputTokens: mainOutputTokens + subagentOutputTokens,
+    totalCacheCreationTokens: mainCacheCreationTokens + subagentCacheCreationTokens,
+    totalCacheReadTokens: mainCacheReadTokens + subagentCacheReadTokens,
+    totalCost: mainCost + subagentCost,
+    mainInputTokens,
+    mainOutputTokens,
+    mainCacheCreationTokens,
+    mainCacheReadTokens,
+    mainCost,
+    subagentInputTokens,
+    subagentOutputTokens,
+    subagentCacheCreationTokens,
+    subagentCacheReadTokens,
+    subagentCost,
+  };
+}
+
 // ─── 1. getStats ────────────────────────────────────────────────────────────
 
 export async function getStats(filters: DashboardFilters) {
@@ -115,6 +266,11 @@ export async function getStats(filters: DashboardFilters) {
   };
 
   const [sessionAgg, activeMembers, subagentAgg, toolUseAgg, repoCount, turnAgg] = await Promise.all([
+    // Bug #4 (spec 004 / P1.5-T5): pull both main agent (`total_*`) and
+    // subagent (`subagent_*`) sums in a single aggregate. Grand total is
+    // computed on the read side as `total_* + subagent_*`. The historical
+    // `totalInputTokens` API key is kept but now means GRAND TOTAL so that
+    // existing UI continues to display the unified value.
     prisma.session.aggregate({
       where: nonStubWhere,
       _count: { id: true },
@@ -124,12 +280,14 @@ export async function getStats(filters: DashboardFilters) {
         totalCacheCreationTokens: true,
         totalCacheReadTokens: true,
         estimatedCost: true,
+        subagentInputTokens: true,
+        subagentOutputTokens: true,
+        subagentCacheCreationTokens: true,
+        subagentCacheReadTokens: true,
+        subagentEstimatedCost: true,
         subagentCount: true,
         toolUseCount: true,
         errorCount: true,
-      },
-      _avg: {
-        estimatedCost: true,
       },
     }),
     prisma.session.findMany({
@@ -157,19 +315,43 @@ export async function getStats(filters: DashboardFilters) {
   ]);
 
   const totalSessions = sessionAgg._count.id;
-  const totalInputTokens = sessionAgg._sum.totalInputTokens ?? 0;
-  const totalCacheReadTokens = sessionAgg._sum.totalCacheReadTokens ?? 0;
-  const cacheEfficiency = totalInputTokens > 0
-    ? totalCacheReadTokens / totalInputTokens
+  const grand = computeSessionGrandTotals(sessionAgg._sum);
+
+  // Bug #12 (spec 004): use cache_hit_ratio definition so the value cannot
+  // exceed 1 (prior implementation divided by `totalInputTokens` only,
+  // producing >100% values regularly). All inputs are GRAND TOTALS so the
+  // KPI reflects the full main + subagent activity.
+  const cacheEfficiency = computeCacheEfficiency(
+    grand.totalInputTokens,
+    grand.totalCacheCreationTokens,
+    grand.totalCacheReadTokens,
+  );
+
+  const averageCostPerSession = totalSessions > 0
+    ? grand.totalCost / totalSessions
     : 0;
 
   return {
     totalSessions,
-    totalInputTokens,
-    totalOutputTokens: sessionAgg._sum.totalOutputTokens ?? 0,
-    totalCacheReadTokens,
-    totalCacheCreationTokens: sessionAgg._sum.totalCacheCreationTokens ?? 0,
-    totalCost: sessionAgg._sum.estimatedCost ?? 0,
+    // ─── Grand totals (main + subagent) — kept under the original keys ────
+    totalInputTokens: grand.totalInputTokens,
+    totalOutputTokens: grand.totalOutputTokens,
+    totalCacheReadTokens: grand.totalCacheReadTokens,
+    totalCacheCreationTokens: grand.totalCacheCreationTokens,
+    totalCost: grand.totalCost,
+    // ─── Main-only breakdown ──────────────────────────────────────────────
+    mainInputTokens: grand.mainInputTokens,
+    mainOutputTokens: grand.mainOutputTokens,
+    mainCacheCreationTokens: grand.mainCacheCreationTokens,
+    mainCacheReadTokens: grand.mainCacheReadTokens,
+    mainCost: grand.mainCost,
+    // ─── Subagent-only breakdown ──────────────────────────────────────────
+    subagentInputTokens: grand.subagentInputTokens,
+    subagentOutputTokens: grand.subagentOutputTokens,
+    subagentCacheCreationTokens: grand.subagentCacheCreationTokens,
+    subagentCacheReadTokens: grand.subagentCacheReadTokens,
+    subagentCost: grand.subagentCost,
+    // ─── Other KPIs ───────────────────────────────────────────────────────
     activeMembers: activeMembers.filter(m => m.memberId !== null).length,
     totalTurns: turnAgg,
     totalSubagents: subagentAgg._count.id,
@@ -179,7 +361,7 @@ export async function getStats(filters: DashboardFilters) {
     averageTurnsPerSession: totalSessions > 0
       ? Math.round((turnAgg / totalSessions) * 100) / 100
       : 0,
-    averageCostPerSession: Math.round((sessionAgg._avg.estimatedCost ?? 0) * 10000) / 10000,
+    averageCostPerSession: Math.round(averageCostPerSession * 10000) / 10000,
     cacheEfficiency: Math.round(cacheEfficiency * 10000) / 10000,
   };
 }
@@ -195,20 +377,33 @@ export async function getDailyStats(filters: DashboardFilters) {
     ? 'LEFT JOIN members m ON s.member_id = m.id'
     : '';
 
+  // Bug #4 (spec 004 / P1.5-T5): emit main / subagent / grand-total triplets
+  // per day. The historical `totalInputTokens` etc. keys keep their meaning
+  // by switching to GRAND totals so charts render the unified value.
   const sql = `
     SELECT
-      DATE(s.started_at) as date,
+      ${tzDate('s.started_at')} as date,
       CAST(COUNT(*) AS DOUBLE) as sessionCount,
-      CAST(COALESCE(SUM(s.total_input_tokens), 0) AS DOUBLE) as totalInputTokens,
-      CAST(COALESCE(SUM(s.total_output_tokens), 0) AS DOUBLE) as totalOutputTokens,
-      CAST(COALESCE(SUM(s.total_cache_creation_tokens), 0) AS DOUBLE) as totalCacheCreationTokens,
-      CAST(COALESCE(SUM(s.total_cache_read_tokens), 0) AS DOUBLE) as totalCacheReadTokens,
-      CAST(COALESCE(SUM(s.estimated_cost), 0.0) AS DOUBLE) as estimatedCost
+      CAST(COALESCE(SUM(s.total_input_tokens), 0) AS DOUBLE) as mainInputTokens,
+      CAST(COALESCE(SUM(s.total_output_tokens), 0) AS DOUBLE) as mainOutputTokens,
+      CAST(COALESCE(SUM(s.total_cache_creation_tokens), 0) AS DOUBLE) as mainCacheCreationTokens,
+      CAST(COALESCE(SUM(s.total_cache_read_tokens), 0) AS DOUBLE) as mainCacheReadTokens,
+      CAST(COALESCE(SUM(s.estimated_cost), 0.0) AS DOUBLE) as mainCost,
+      CAST(COALESCE(SUM(s.subagent_input_tokens), 0) AS DOUBLE) as subagentInputTokens,
+      CAST(COALESCE(SUM(s.subagent_output_tokens), 0) AS DOUBLE) as subagentOutputTokens,
+      CAST(COALESCE(SUM(s.subagent_cache_creation_tokens), 0) AS DOUBLE) as subagentCacheCreationTokens,
+      CAST(COALESCE(SUM(s.subagent_cache_read_tokens), 0) AS DOUBLE) as subagentCacheReadTokens,
+      CAST(COALESCE(SUM(s.subagent_estimated_cost), 0.0) AS DOUBLE) as subagentCost,
+      CAST(COALESCE(SUM(s.total_input_tokens + s.subagent_input_tokens), 0) AS DOUBLE) as totalInputTokens,
+      CAST(COALESCE(SUM(s.total_output_tokens + s.subagent_output_tokens), 0) AS DOUBLE) as totalOutputTokens,
+      CAST(COALESCE(SUM(s.total_cache_creation_tokens + s.subagent_cache_creation_tokens), 0) AS DOUBLE) as totalCacheCreationTokens,
+      CAST(COALESCE(SUM(s.total_cache_read_tokens + s.subagent_cache_read_tokens), 0) AS DOUBLE) as totalCacheReadTokens,
+      CAST(COALESCE(SUM(COALESCE(s.estimated_cost, 0) + COALESCE(s.subagent_estimated_cost, 0)), 0.0) AS DOUBLE) as estimatedCost
     FROM sessions s
     ${joinClause}
     ${whereClause}
-    GROUP BY DATE(s.started_at)
-    ORDER BY DATE(s.started_at)
+    GROUP BY ${tzDate('s.started_at')}
+    ORDER BY ${tzDate('s.started_at')}
   `;
 
   const rows = await prisma.$queryRawUnsafe<any[]>(sql, ...params);
@@ -216,11 +411,24 @@ export async function getDailyStats(filters: DashboardFilters) {
   return rows.map(row => ({
     date: toDateStr(row.date),
     sessionCount: Number(row.sessionCount),
+    // Grand totals (kept under historical keys for backward compat)
     totalInputTokens: Number(row.totalInputTokens),
     totalOutputTokens: Number(row.totalOutputTokens),
     totalCacheCreationTokens: Number(row.totalCacheCreationTokens),
     totalCacheReadTokens: Number(row.totalCacheReadTokens),
     estimatedCost: Math.round(Number(row.estimatedCost) * 10000) / 10000,
+    // Main-only breakdown
+    mainInputTokens: Number(row.mainInputTokens),
+    mainOutputTokens: Number(row.mainOutputTokens),
+    mainCacheCreationTokens: Number(row.mainCacheCreationTokens),
+    mainCacheReadTokens: Number(row.mainCacheReadTokens),
+    mainCost: Math.round(Number(row.mainCost) * 10000) / 10000,
+    // Subagent-only breakdown
+    subagentInputTokens: Number(row.subagentInputTokens),
+    subagentOutputTokens: Number(row.subagentOutputTokens),
+    subagentCacheCreationTokens: Number(row.subagentCacheCreationTokens),
+    subagentCacheReadTokens: Number(row.subagentCacheReadTokens),
+    subagentCost: Math.round(Number(row.subagentCost) * 10000) / 10000,
   }));
 }
 
@@ -232,17 +440,32 @@ export async function getMemberStats(filters: DashboardFilters) {
   // Always join members for grouping
   const joinClause = 'LEFT JOIN members m ON s.member_id = m.id';
 
+  // Bug #4 (spec 004 / P1.5-T5): grand total = main + subagent. Keys
+  // `totalInputTokens` etc. now mean GRAND totals to preserve UI semantics.
   const sql = `
     SELECT
       m.git_email as gitEmail,
       m.display_name as displayName,
       CAST(COUNT(*) AS DOUBLE) as sessionCount,
-      CAST(COALESCE(SUM(s.total_input_tokens), 0) AS DOUBLE) as totalInputTokens,
-      CAST(COALESCE(SUM(s.total_output_tokens), 0) AS DOUBLE) as totalOutputTokens,
-      CAST(COALESCE(SUM(s.total_cache_creation_tokens), 0) AS DOUBLE) as totalCacheCreationTokens,
-      CAST(COALESCE(SUM(s.total_cache_read_tokens), 0) AS DOUBLE) as totalCacheReadTokens,
-      CAST(COALESCE(SUM(s.total_input_tokens + s.total_output_tokens + s.total_cache_creation_tokens + s.total_cache_read_tokens), 0) AS DOUBLE) as totalTokens,
-      CAST(COALESCE(SUM(s.estimated_cost), 0.0) AS DOUBLE) as estimatedCost,
+      CAST(COALESCE(SUM(s.total_input_tokens + s.subagent_input_tokens), 0) AS DOUBLE) as totalInputTokens,
+      CAST(COALESCE(SUM(s.total_output_tokens + s.subagent_output_tokens), 0) AS DOUBLE) as totalOutputTokens,
+      CAST(COALESCE(SUM(s.total_cache_creation_tokens + s.subagent_cache_creation_tokens), 0) AS DOUBLE) as totalCacheCreationTokens,
+      CAST(COALESCE(SUM(s.total_cache_read_tokens + s.subagent_cache_read_tokens), 0) AS DOUBLE) as totalCacheReadTokens,
+      CAST(COALESCE(SUM(
+        s.total_input_tokens + s.total_output_tokens + s.total_cache_creation_tokens + s.total_cache_read_tokens
+        + s.subagent_input_tokens + s.subagent_output_tokens + s.subagent_cache_creation_tokens + s.subagent_cache_read_tokens
+      ), 0) AS DOUBLE) as totalTokens,
+      CAST(COALESCE(SUM(COALESCE(s.estimated_cost, 0) + COALESCE(s.subagent_estimated_cost, 0)), 0.0) AS DOUBLE) as estimatedCost,
+      CAST(COALESCE(SUM(s.total_input_tokens), 0) AS DOUBLE) as mainInputTokens,
+      CAST(COALESCE(SUM(s.total_output_tokens), 0) AS DOUBLE) as mainOutputTokens,
+      CAST(COALESCE(SUM(s.total_cache_creation_tokens), 0) AS DOUBLE) as mainCacheCreationTokens,
+      CAST(COALESCE(SUM(s.total_cache_read_tokens), 0) AS DOUBLE) as mainCacheReadTokens,
+      CAST(COALESCE(SUM(s.estimated_cost), 0.0) AS DOUBLE) as mainCost,
+      CAST(COALESCE(SUM(s.subagent_input_tokens), 0) AS DOUBLE) as subagentInputTokens,
+      CAST(COALESCE(SUM(s.subagent_output_tokens), 0) AS DOUBLE) as subagentOutputTokens,
+      CAST(COALESCE(SUM(s.subagent_cache_creation_tokens), 0) AS DOUBLE) as subagentCacheCreationTokens,
+      CAST(COALESCE(SUM(s.subagent_cache_read_tokens), 0) AS DOUBLE) as subagentCacheReadTokens,
+      CAST(COALESCE(SUM(s.subagent_estimated_cost), 0.0) AS DOUBLE) as subagentCost,
       CAST(COALESCE(SUM((SELECT COUNT(*) FROM turns t WHERE t.session_id = s.id)), 0) AS DOUBLE) as totalTurns
     FROM sessions s
     ${joinClause}
@@ -257,12 +480,25 @@ export async function getMemberStats(filters: DashboardFilters) {
     gitEmail: row.gitEmail ?? 'unknown',
     displayName: row.displayName ?? null,
     sessionCount: Number(row.sessionCount),
+    // Grand totals (main + subagent)
     totalInputTokens: Number(row.totalInputTokens),
     totalOutputTokens: Number(row.totalOutputTokens),
     totalCacheCreationTokens: Number(row.totalCacheCreationTokens),
     totalCacheReadTokens: Number(row.totalCacheReadTokens),
     totalTokens: Number(row.totalTokens),
     estimatedCost: Math.round(Number(row.estimatedCost) * 10000) / 10000,
+    // Main-only
+    mainInputTokens: Number(row.mainInputTokens),
+    mainOutputTokens: Number(row.mainOutputTokens),
+    mainCacheCreationTokens: Number(row.mainCacheCreationTokens),
+    mainCacheReadTokens: Number(row.mainCacheReadTokens),
+    mainCost: Math.round(Number(row.mainCost) * 10000) / 10000,
+    // Subagent-only
+    subagentInputTokens: Number(row.subagentInputTokens),
+    subagentOutputTokens: Number(row.subagentOutputTokens),
+    subagentCacheCreationTokens: Number(row.subagentCacheCreationTokens),
+    subagentCacheReadTokens: Number(row.subagentCacheReadTokens),
+    subagentCost: Math.round(Number(row.subagentCost) * 10000) / 10000,
     totalTurns: Number(row.totalTurns),
   }));
 }
@@ -394,42 +630,56 @@ export async function getCostStats(filters: DashboardFilters) {
     ? 'LEFT JOIN members m ON s.member_id = m.id'
     : '';
 
+  // Bug #4 (spec 004 / P1.5-T5): aggregate grand totals (main + subagent)
+  // when computing token-based fallback cost, and combine the two stored
+  // cost columns. Keys `inputTokens`, `cost` etc. retain their semantics
+  // by switching to GRAND values.
   const sql = `
     SELECT
-      DATE(s.started_at) as date,
+      ${tzDate('s.started_at')} as date,
       s.model,
-      CAST(COALESCE(SUM(s.total_input_tokens), 0) AS DOUBLE) as inputTokens,
-      CAST(COALESCE(SUM(s.total_output_tokens), 0) AS DOUBLE) as outputTokens,
-      CAST(COALESCE(SUM(s.total_cache_creation_tokens), 0) AS DOUBLE) as cacheCreation,
-      CAST(COALESCE(SUM(s.total_cache_read_tokens), 0) AS DOUBLE) as cacheRead,
-      CAST(COALESCE(SUM(s.estimated_cost), 0.0) AS DOUBLE) as estimatedCost
+      CAST(COALESCE(SUM(s.total_input_tokens + s.subagent_input_tokens), 0) AS DOUBLE) as inputTokens,
+      CAST(COALESCE(SUM(s.total_output_tokens + s.subagent_output_tokens), 0) AS DOUBLE) as outputTokens,
+      CAST(COALESCE(SUM(s.total_cache_creation_tokens + s.subagent_cache_creation_tokens), 0) AS DOUBLE) as cacheCreation,
+      CAST(COALESCE(SUM(s.total_cache_read_tokens + s.subagent_cache_read_tokens), 0) AS DOUBLE) as cacheRead,
+      CAST(COALESCE(SUM(COALESCE(s.estimated_cost, 0) + COALESCE(s.subagent_estimated_cost, 0)), 0.0) AS DOUBLE) as estimatedCost
     FROM sessions s
     ${joinClause}
     ${whereClause}
-    GROUP BY DATE(s.started_at), s.model
-    ORDER BY DATE(s.started_at)
+    GROUP BY ${tzDate('s.started_at')}, s.model
+    ORDER BY ${tzDate('s.started_at')}
   `;
 
   const rows = await prisma.$queryRawUnsafe<any[]>(sql, ...params);
 
-  return rows.map(row => {
-    // If estimatedCost is already stored, prefer it; otherwise compute from tokens
-    let cost = Number(row.estimatedCost);
-    if (cost === 0) {
-      const rates = getCostRates(row.model);
-      cost =
-        (Number(row.inputTokens) / 1_000_000) * rates.input +
-        (Number(row.outputTokens) / 1_000_000) * rates.output +
-        (Number(row.cacheCreation) / 1_000_000) * rates.cacheWrite +
-        (Number(row.cacheRead) / 1_000_000) * rates.cacheRead;
-    }
+  return Promise.all(
+    rows.map(async (row) => {
+      // If estimatedCost is already stored, prefer it; otherwise compute from tokens
+      let cost = Number(row.estimatedCost);
+      if (cost === 0) {
+        // Pass the per-row usage so getPricing can pick the `-context-1m`
+        // premium tier when total input tokens exceed the 200K threshold
+        // (docs/decisions/resolved.md D-008).
+        const rates = await getPricing(row.model ?? '', {
+          inputTokens: Number(row.inputTokens),
+          cacheCreationTokens: Number(row.cacheCreation),
+          cacheReadTokens: Number(row.cacheRead),
+          outputTokens: Number(row.outputTokens),
+        });
+        cost =
+          (Number(row.inputTokens) / 1_000_000) * rates.inputPerMtok +
+          (Number(row.outputTokens) / 1_000_000) * rates.outputPerMtok +
+          (Number(row.cacheCreation) / 1_000_000) * rates.cacheWritePerMtok +
+          (Number(row.cacheRead) / 1_000_000) * rates.cacheReadPerMtok;
+      }
 
-    return {
-      date: toDateStr(row.date),
-      model: row.model ?? 'unknown',
-      cost: Math.round(cost * 10000) / 10000,
-    };
-  });
+      return {
+        date: toDateStr(row.date),
+        model: row.model ?? 'unknown',
+        cost: Math.round(cost * 10000) / 10000,
+      };
+    }),
+  );
 }
 
 // ─── 7. getSessions ─────────────────────────────────────────────────────────
@@ -470,6 +720,13 @@ export async function getSessions(filters: DashboardFilters, page = 1, perPage =
         totalCacheCreationTokens: true,
         totalCacheReadTokens: true,
         estimatedCost: true,
+        // Bug #4 (spec 004 / P1.5-T5): expose subagent slice so the
+        // session list can render grand total = main + subagent.
+        subagentInputTokens: true,
+        subagentOutputTokens: true,
+        subagentCacheCreationTokens: true,
+        subagentCacheReadTokens: true,
+        subagentEstimatedCost: true,
         turnCount: true,
         subagentCount: true,
         toolUseCount: true,
@@ -485,14 +742,37 @@ export async function getSessions(filters: DashboardFilters, page = 1, perPage =
   ]);
 
   return {
-    data: data.map(s => ({
-      ...s,
-      firstPrompt: s.turns?.[0]?.promptText ?? null,
-      turnCount: s.turns.length,
-      turns: undefined,
-      startedAt: s.startedAt?.toISOString() ?? null,
-      endedAt: s.endedAt?.toISOString() ?? null,
-    })),
+    data: data.map(s => {
+      // Grand totals (kept under historical keys for UI compat)
+      const grandInputTokens = (s.totalInputTokens ?? 0) + (s.subagentInputTokens ?? 0);
+      const grandOutputTokens = (s.totalOutputTokens ?? 0) + (s.subagentOutputTokens ?? 0);
+      const grandCacheCreationTokens =
+        (s.totalCacheCreationTokens ?? 0) + (s.subagentCacheCreationTokens ?? 0);
+      const grandCacheReadTokens =
+        (s.totalCacheReadTokens ?? 0) + (s.subagentCacheReadTokens ?? 0);
+      const grandCost = (s.estimatedCost ?? 0) + (s.subagentEstimatedCost ?? 0);
+
+      return {
+        ...s,
+        // Main-only (renamed copies — preserve raw `total*` columns AS grand total)
+        mainInputTokens: s.totalInputTokens,
+        mainOutputTokens: s.totalOutputTokens,
+        mainCacheCreationTokens: s.totalCacheCreationTokens,
+        mainCacheReadTokens: s.totalCacheReadTokens,
+        mainCost: s.estimatedCost,
+        // Override historical keys to grand totals
+        totalInputTokens: grandInputTokens,
+        totalOutputTokens: grandOutputTokens,
+        totalCacheCreationTokens: grandCacheCreationTokens,
+        totalCacheReadTokens: grandCacheReadTokens,
+        estimatedCost: grandCost,
+        firstPrompt: s.turns?.[0]?.promptText ?? null,
+        turnCount: s.turns.length,
+        turns: undefined,
+        startedAt: s.startedAt?.toISOString() ?? null,
+        endedAt: s.endedAt?.toISOString() ?? null,
+      };
+    }),
     total,
     page: safePage,
     perPage: safePerPage,
@@ -694,8 +974,35 @@ export async function getSessionDetail(id: number) {
     return turn;
   });
 
+  // Bug #4 (spec 004 / P1.5-T5): expose grand total = main + subagent on
+  // the historical keys so detail UIs render the unified value, while
+  // preserving the raw split for callers that want it.
+  const mainInputTokens = session.totalInputTokens ?? 0;
+  const mainOutputTokens = session.totalOutputTokens ?? 0;
+  const mainCacheCreationTokens = session.totalCacheCreationTokens ?? 0;
+  const mainCacheReadTokens = session.totalCacheReadTokens ?? 0;
+  const mainCost = session.estimatedCost ?? 0;
+  const subagentInputTokens = session.subagentInputTokens ?? 0;
+  const subagentOutputTokens = session.subagentOutputTokens ?? 0;
+  const subagentCacheCreationTokens = session.subagentCacheCreationTokens ?? 0;
+  const subagentCacheReadTokens = session.subagentCacheReadTokens ?? 0;
+  const subagentCost = session.subagentEstimatedCost ?? 0;
+
   return {
     ...session,
+    // Grand totals override historical keys
+    totalInputTokens: mainInputTokens + subagentInputTokens,
+    totalOutputTokens: mainOutputTokens + subagentOutputTokens,
+    totalCacheCreationTokens: mainCacheCreationTokens + subagentCacheCreationTokens,
+    totalCacheReadTokens: mainCacheReadTokens + subagentCacheReadTokens,
+    estimatedCost: mainCost + subagentCost,
+    // Main-only breakdown
+    mainInputTokens,
+    mainOutputTokens,
+    mainCacheCreationTokens,
+    mainCacheReadTokens,
+    mainCost,
+    // Subagent-only breakdown (raw columns also still present via spread above)
     turns: turnsWithDuration,
     turnCount: actualTurnCount,
     summary: session.summary,
@@ -713,12 +1020,17 @@ export async function getHeatmapData(filters: DashboardFilters) {
     ? 'LEFT JOIN members m ON s.member_id = m.id'
     : '';
 
+  // Bug #4 (spec 004 / P1.5-T5): include subagent tokens in the heatmap
+  // intensity so dormant cells caused by main-only counting are filled in.
   const sql = `
     SELECT
-      (DAYOFWEEK(s.started_at) - 1) as dayOfWeek,
-      HOUR(s.started_at) as hour,
+      (DAYOFWEEK(${tzExpr('s.started_at')}) - 1) as dayOfWeek,
+      HOUR(${tzExpr('s.started_at')}) as hour,
       CAST(COUNT(*) AS DOUBLE) as count,
-      CAST(COALESCE(SUM(s.total_input_tokens + s.total_output_tokens + s.total_cache_creation_tokens + s.total_cache_read_tokens), 0) AS DOUBLE) as totalTokens
+      CAST(COALESCE(SUM(
+        s.total_input_tokens + s.total_output_tokens + s.total_cache_creation_tokens + s.total_cache_read_tokens
+        + s.subagent_input_tokens + s.subagent_output_tokens + s.subagent_cache_creation_tokens + s.subagent_cache_read_tokens
+      ), 0) AS DOUBLE) as totalTokens
     FROM sessions s
     ${joinClause}
     ${whereClause}
@@ -806,15 +1118,28 @@ export async function getRepoStats(filters: DashboardFilters) {
     ? 'LEFT JOIN members m ON s.member_id = m.id'
     : '';
 
+  // Bug #4 (spec 004 / P1.5-T5): grand totals = main + subagent. Keep the
+  // historical `totalInputTokens` etc. keys but switch their meaning to
+  // grand totals; expose new `mainXxx` / `subagentXxx` triplets alongside.
   const sql = `
     SELECT
       s.git_repo as gitRepo,
       CAST(COUNT(*) AS DOUBLE) as sessionCount,
-      CAST(COALESCE(SUM(s.total_input_tokens), 0) AS DOUBLE) as totalInputTokens,
-      CAST(COALESCE(SUM(s.total_output_tokens), 0) AS DOUBLE) as totalOutputTokens,
-      CAST(COALESCE(SUM(s.total_cache_creation_tokens), 0) AS DOUBLE) as totalCacheCreationTokens,
-      CAST(COALESCE(SUM(s.total_cache_read_tokens), 0) AS DOUBLE) as totalCacheReadTokens,
-      CAST(COALESCE(SUM(s.estimated_cost), 0) AS DOUBLE) as estimatedCost,
+      CAST(COALESCE(SUM(s.total_input_tokens + s.subagent_input_tokens), 0) AS DOUBLE) as totalInputTokens,
+      CAST(COALESCE(SUM(s.total_output_tokens + s.subagent_output_tokens), 0) AS DOUBLE) as totalOutputTokens,
+      CAST(COALESCE(SUM(s.total_cache_creation_tokens + s.subagent_cache_creation_tokens), 0) AS DOUBLE) as totalCacheCreationTokens,
+      CAST(COALESCE(SUM(s.total_cache_read_tokens + s.subagent_cache_read_tokens), 0) AS DOUBLE) as totalCacheReadTokens,
+      CAST(COALESCE(SUM(COALESCE(s.estimated_cost, 0) + COALESCE(s.subagent_estimated_cost, 0)), 0) AS DOUBLE) as estimatedCost,
+      CAST(COALESCE(SUM(s.total_input_tokens), 0) AS DOUBLE) as mainInputTokens,
+      CAST(COALESCE(SUM(s.total_output_tokens), 0) AS DOUBLE) as mainOutputTokens,
+      CAST(COALESCE(SUM(s.total_cache_creation_tokens), 0) AS DOUBLE) as mainCacheCreationTokens,
+      CAST(COALESCE(SUM(s.total_cache_read_tokens), 0) AS DOUBLE) as mainCacheReadTokens,
+      CAST(COALESCE(SUM(s.estimated_cost), 0.0) AS DOUBLE) as mainCost,
+      CAST(COALESCE(SUM(s.subagent_input_tokens), 0) AS DOUBLE) as subagentInputTokens,
+      CAST(COALESCE(SUM(s.subagent_output_tokens), 0) AS DOUBLE) as subagentOutputTokens,
+      CAST(COALESCE(SUM(s.subagent_cache_creation_tokens), 0) AS DOUBLE) as subagentCacheCreationTokens,
+      CAST(COALESCE(SUM(s.subagent_cache_read_tokens), 0) AS DOUBLE) as subagentCacheReadTokens,
+      CAST(COALESCE(SUM(s.subagent_estimated_cost), 0.0) AS DOUBLE) as subagentCost,
       CAST(COUNT(DISTINCT s.member_id) AS DOUBLE) as memberCount,
       MAX(COALESCE(s.ended_at, s.started_at)) as lastUsed
     FROM sessions s
@@ -830,11 +1155,24 @@ export async function getRepoStats(filters: DashboardFilters) {
   return rows.map(row => ({
     gitRepo: row.gitRepo,
     sessionCount: Number(row.sessionCount),
+    // Grand totals (main + subagent)
     totalInputTokens: Number(row.totalInputTokens),
     totalOutputTokens: Number(row.totalOutputTokens),
     totalCacheCreationTokens: Number(row.totalCacheCreationTokens),
     totalCacheReadTokens: Number(row.totalCacheReadTokens),
     estimatedCost: Number(row.estimatedCost),
+    // Main-only
+    mainInputTokens: Number(row.mainInputTokens),
+    mainOutputTokens: Number(row.mainOutputTokens),
+    mainCacheCreationTokens: Number(row.mainCacheCreationTokens),
+    mainCacheReadTokens: Number(row.mainCacheReadTokens),
+    mainCost: Math.round(Number(row.mainCost) * 10000) / 10000,
+    // Subagent-only
+    subagentInputTokens: Number(row.subagentInputTokens),
+    subagentOutputTokens: Number(row.subagentOutputTokens),
+    subagentCacheCreationTokens: Number(row.subagentCacheCreationTokens),
+    subagentCacheReadTokens: Number(row.subagentCacheReadTokens),
+    subagentCost: Math.round(Number(row.subagentCost) * 10000) / 10000,
     memberCount: Number(row.memberCount),
     lastUsed: row.lastUsed ? new Date(row.lastUsed).toISOString() : null,
   }));
@@ -851,15 +1189,23 @@ export async function getRepoDetail(repo: string, filters: DashboardFilters) {
     ? 'LEFT JOIN members m ON s.member_id = m.id'
     : '';
 
-  // Branches
+  // Branches — bug #4 / P1.5-T5: grand totals (main + subagent)
   const branchSql = `
     SELECT
       s.git_branch as gitBranch,
       CAST(COUNT(*) AS DOUBLE) as sessionCount,
-      CAST(COALESCE(SUM(s.total_input_tokens), 0) AS DOUBLE) as totalInputTokens,
-      CAST(COALESCE(SUM(s.total_output_tokens), 0) AS DOUBLE) as totalOutputTokens,
-      CAST(COALESCE(SUM(s.total_cache_creation_tokens), 0) AS DOUBLE) as totalCacheCreationTokens,
-      CAST(COALESCE(SUM(s.total_cache_read_tokens), 0) AS DOUBLE) as totalCacheReadTokens
+      CAST(COALESCE(SUM(s.total_input_tokens + s.subagent_input_tokens), 0) AS DOUBLE) as totalInputTokens,
+      CAST(COALESCE(SUM(s.total_output_tokens + s.subagent_output_tokens), 0) AS DOUBLE) as totalOutputTokens,
+      CAST(COALESCE(SUM(s.total_cache_creation_tokens + s.subagent_cache_creation_tokens), 0) AS DOUBLE) as totalCacheCreationTokens,
+      CAST(COALESCE(SUM(s.total_cache_read_tokens + s.subagent_cache_read_tokens), 0) AS DOUBLE) as totalCacheReadTokens,
+      CAST(COALESCE(SUM(s.total_input_tokens), 0) AS DOUBLE) as mainInputTokens,
+      CAST(COALESCE(SUM(s.total_output_tokens), 0) AS DOUBLE) as mainOutputTokens,
+      CAST(COALESCE(SUM(s.total_cache_creation_tokens), 0) AS DOUBLE) as mainCacheCreationTokens,
+      CAST(COALESCE(SUM(s.total_cache_read_tokens), 0) AS DOUBLE) as mainCacheReadTokens,
+      CAST(COALESCE(SUM(s.subagent_input_tokens), 0) AS DOUBLE) as subagentInputTokens,
+      CAST(COALESCE(SUM(s.subagent_output_tokens), 0) AS DOUBLE) as subagentOutputTokens,
+      CAST(COALESCE(SUM(s.subagent_cache_creation_tokens), 0) AS DOUBLE) as subagentCacheCreationTokens,
+      CAST(COALESCE(SUM(s.subagent_cache_read_tokens), 0) AS DOUBLE) as subagentCacheReadTokens
     FROM sessions s
     ${joinClause}
     ${whereClause}
@@ -874,12 +1220,12 @@ export async function getRepoDetail(repo: string, filters: DashboardFilters) {
   ];
 
   if (filters.from) {
-    memberConditions.push('s.started_at >= ?');
-    memberParams.push(new Date(filters.from));
+    memberConditions.push(`${tzExpr('s.started_at')} >= ?`);
+    memberParams.push(filters.from);
   }
   if (filters.to) {
-    memberConditions.push('s.started_at <= ?');
-    memberParams.push(new Date(filters.to + 'T23:59:59Z'));
+    memberConditions.push(`${tzExpr('s.started_at')} <= ?`);
+    memberParams.push(filters.to + ' 23:59:59');
   }
   memberConditions.push('s.git_repo = ?');
   memberParams.push(repo);
@@ -890,12 +1236,16 @@ export async function getRepoDetail(repo: string, filters: DashboardFilters) {
 
   const memberWhereClause = 'WHERE ' + memberConditions.join(' AND ');
 
+  // Members — bug #4 / P1.5-T5: include subagent slice in totalTokens
   const memberSql = `
     SELECT
       m.git_email as gitEmail,
       m.display_name as displayName,
       CAST(COUNT(*) AS DOUBLE) as sessionCount,
-      CAST(COALESCE(SUM(s.total_input_tokens + s.total_output_tokens + s.total_cache_creation_tokens + s.total_cache_read_tokens), 0) AS DOUBLE) as totalTokens
+      CAST(COALESCE(SUM(
+        s.total_input_tokens + s.total_output_tokens + s.total_cache_creation_tokens + s.total_cache_read_tokens
+        + s.subagent_input_tokens + s.subagent_output_tokens + s.subagent_cache_creation_tokens + s.subagent_cache_read_tokens
+      ), 0) AS DOUBLE) as totalTokens
     FROM sessions s
     LEFT JOIN members m ON s.member_id = m.id
     ${memberWhereClause}
@@ -903,18 +1253,21 @@ export async function getRepoDetail(repo: string, filters: DashboardFilters) {
     ORDER BY sessionCount DESC
   `;
 
-  // Daily stats for this repo
+  // Daily stats for this repo — bug #4 / P1.5-T5: include subagent slice
   const dailySql = `
     SELECT
-      DATE(s.started_at) as date,
+      ${tzDate('s.started_at')} as date,
       CAST(COUNT(*) AS DOUBLE) as sessionCount,
       CAST(COALESCE(SUM((SELECT COUNT(*) FROM turns t WHERE t.session_id = s.id)), 0) AS DOUBLE) as turnCount,
-      CAST(COALESCE(SUM(s.total_input_tokens + s.total_output_tokens + s.total_cache_creation_tokens + s.total_cache_read_tokens), 0) AS DOUBLE) as totalTokens
+      CAST(COALESCE(SUM(
+        s.total_input_tokens + s.total_output_tokens + s.total_cache_creation_tokens + s.total_cache_read_tokens
+        + s.subagent_input_tokens + s.subagent_output_tokens + s.subagent_cache_creation_tokens + s.subagent_cache_read_tokens
+      ), 0) AS DOUBLE) as totalTokens
     FROM sessions s
     ${joinClause}
     ${whereClause}
-    GROUP BY DATE(s.started_at)
-    ORDER BY DATE(s.started_at)
+    GROUP BY ${tzDate('s.started_at')}
+    ORDER BY ${tzDate('s.started_at')}
   `;
 
   const where = buildSessionWhere(baseFilters);
@@ -999,10 +1352,21 @@ export async function getRepoDetail(repo: string, filters: DashboardFilters) {
     branches: branchRows.map(row => ({
       gitBranch: row.gitBranch,
       sessionCount: Number(row.sessionCount),
+      // Grand totals (main + subagent)
       totalInputTokens: Number(row.totalInputTokens),
       totalOutputTokens: Number(row.totalOutputTokens),
       totalCacheCreationTokens: Number(row.totalCacheCreationTokens),
       totalCacheReadTokens: Number(row.totalCacheReadTokens),
+      // Main-only
+      mainInputTokens: Number(row.mainInputTokens),
+      mainOutputTokens: Number(row.mainOutputTokens),
+      mainCacheCreationTokens: Number(row.mainCacheCreationTokens),
+      mainCacheReadTokens: Number(row.mainCacheReadTokens),
+      // Subagent-only
+      subagentInputTokens: Number(row.subagentInputTokens),
+      subagentOutputTokens: Number(row.subagentOutputTokens),
+      subagentCacheCreationTokens: Number(row.subagentCacheCreationTokens),
+      subagentCacheReadTokens: Number(row.subagentCacheReadTokens),
       sessions: sessionsByBranch.get(row.gitBranch ?? '') ?? [],
     })),
     members: memberRows.map(row => ({
@@ -1026,28 +1390,40 @@ export async function getMemberDetail(member: string, filters: DashboardFilters)
   const baseFilters = { ...filters, member };
   const { whereClause, params } = buildRawWhere(baseFilters);
 
-  // Daily stats
+  // Daily stats — bug #4 / P1.5-T5: emit grand totals plus the
+  // main-only / subagent-only triplets so the UI can show splits.
   const dailySql = `
     SELECT
-      DATE(s.started_at) as date,
-      CAST(COALESCE(SUM(s.total_input_tokens), 0) AS DOUBLE) as inputTokens,
-      CAST(COALESCE(SUM(s.total_output_tokens), 0) AS DOUBLE) as outputTokens,
-      CAST(COALESCE(SUM(s.total_cache_creation_tokens), 0) AS DOUBLE) as cacheCreationTokens,
-      CAST(COALESCE(SUM(s.total_cache_read_tokens), 0) AS DOUBLE) as cacheReadTokens,
+      ${tzDate('s.started_at')} as date,
+      CAST(COALESCE(SUM(s.total_input_tokens + s.subagent_input_tokens), 0) AS DOUBLE) as inputTokens,
+      CAST(COALESCE(SUM(s.total_output_tokens + s.subagent_output_tokens), 0) AS DOUBLE) as outputTokens,
+      CAST(COALESCE(SUM(s.total_cache_creation_tokens + s.subagent_cache_creation_tokens), 0) AS DOUBLE) as cacheCreationTokens,
+      CAST(COALESCE(SUM(s.total_cache_read_tokens + s.subagent_cache_read_tokens), 0) AS DOUBLE) as cacheReadTokens,
+      CAST(COALESCE(SUM(s.total_input_tokens), 0) AS DOUBLE) as mainInputTokens,
+      CAST(COALESCE(SUM(s.total_output_tokens), 0) AS DOUBLE) as mainOutputTokens,
+      CAST(COALESCE(SUM(s.total_cache_creation_tokens), 0) AS DOUBLE) as mainCacheCreationTokens,
+      CAST(COALESCE(SUM(s.total_cache_read_tokens), 0) AS DOUBLE) as mainCacheReadTokens,
+      CAST(COALESCE(SUM(s.subagent_input_tokens), 0) AS DOUBLE) as subagentInputTokens,
+      CAST(COALESCE(SUM(s.subagent_output_tokens), 0) AS DOUBLE) as subagentOutputTokens,
+      CAST(COALESCE(SUM(s.subagent_cache_creation_tokens), 0) AS DOUBLE) as subagentCacheCreationTokens,
+      CAST(COALESCE(SUM(s.subagent_cache_read_tokens), 0) AS DOUBLE) as subagentCacheReadTokens,
       CAST(COUNT(*) AS DOUBLE) as sessionCount
     FROM sessions s
     LEFT JOIN members m ON s.member_id = m.id
     ${whereClause}
-    GROUP BY DATE(s.started_at)
-    ORDER BY DATE(s.started_at)
+    GROUP BY ${tzDate('s.started_at')}
+    ORDER BY ${tzDate('s.started_at')}
   `;
 
-  // Model breakdown
+  // Model breakdown — bug #4 / P1.5-T5: include subagent slice
   const modelSql = `
     SELECT
       s.model,
       CAST(COUNT(*) AS DOUBLE) as sessionCount,
-      CAST(COALESCE(SUM(s.total_input_tokens + s.total_output_tokens + s.total_cache_creation_tokens + s.total_cache_read_tokens), 0) AS DOUBLE) as totalTokens
+      CAST(COALESCE(SUM(
+        s.total_input_tokens + s.total_output_tokens + s.total_cache_creation_tokens + s.total_cache_read_tokens
+        + s.subagent_input_tokens + s.subagent_output_tokens + s.subagent_cache_creation_tokens + s.subagent_cache_read_tokens
+      ), 0) AS DOUBLE) as totalTokens
     FROM sessions s
     LEFT JOIN members m ON s.member_id = m.id
     ${whereClause}
@@ -1085,10 +1461,21 @@ export async function getMemberDetail(member: string, filters: DashboardFilters)
   return {
     dailyStats: dailyRows.map(row => ({
       date: toDateStr(row.date),
+      // Grand totals (main + subagent)
       inputTokens: Number(row.inputTokens),
       outputTokens: Number(row.outputTokens),
       cacheCreationTokens: Number(row.cacheCreationTokens),
       cacheReadTokens: Number(row.cacheReadTokens),
+      // Main-only
+      mainInputTokens: Number(row.mainInputTokens),
+      mainOutputTokens: Number(row.mainOutputTokens),
+      mainCacheCreationTokens: Number(row.mainCacheCreationTokens),
+      mainCacheReadTokens: Number(row.mainCacheReadTokens),
+      // Subagent-only
+      subagentInputTokens: Number(row.subagentInputTokens),
+      subagentOutputTokens: Number(row.subagentOutputTokens),
+      subagentCacheCreationTokens: Number(row.subagentCacheCreationTokens),
+      subagentCacheReadTokens: Number(row.subagentCacheReadTokens),
       sessionCount: Number(row.sessionCount),
     })),
     modelBreakdown: modelRows.map(row => ({
@@ -1132,30 +1519,64 @@ export async function getFilterOptions() {
   };
 }
 
+// ─── Heatmap default window helper ─────────────────────────────────────────
+
+/**
+ * Default time window for date-axis heatmaps when the caller did not specify
+ * `filters.from`. Without this guard the heatmap renders one column per day
+ * for the entire history of the database, which on the dashboard becomes an
+ * effectively infinite horizontal scroll. We cap to the last 30 days (JST
+ * calendar) so the grid stays readable inside a `grid-2` cell.
+ *
+ * The cutoff is applied as a parameterized `>=` in JST via `tzExpr`, the same
+ * shape used by `buildRawWhere` for explicit `from`. `to` is intentionally
+ * untouched: when only `from` is omitted, we still honor an explicit `to`.
+ */
+const HEATMAP_DEFAULT_DAYS = 30;
+
+function applyHeatmapDateWindow(filters: DashboardFilters): DashboardFilters {
+  if (filters.from) return filters;
+  // Compute "today (JST) - 30 days" as a YYYY-MM-DD string. We do this in
+  // Node so the value is a stable parameter rather than baked into SQL, and
+  // so unit tests can stub Date.
+  const nowMs = Date.now();
+  // JST is UTC+9. Shift the wall clock and slice to date.
+  const jstNow = new Date(nowMs + 9 * 60 * 60 * 1000);
+  jstNow.setUTCDate(jstNow.getUTCDate() - HEATMAP_DEFAULT_DAYS);
+  const from = jstNow.toISOString().slice(0, 10);
+  return { ...filters, from };
+}
+
 // ─── 15. getRepoDateHeatmap ─────────────────────────────────────────────────
 
 export async function getRepoDateHeatmap(filters: DashboardFilters) {
-  const { whereClause, params } = buildRawWhere(filters);
+  const effectiveFilters = applyHeatmapDateWindow(filters);
+  const { whereClause, params } = buildRawWhere(effectiveFilters);
 
-  const needsMemberJoin = !!filters.member;
+  const needsMemberJoin = !!effectiveFilters.member;
   const joinClause = needsMemberJoin
     ? 'LEFT JOIN members m ON s.member_id = m.id'
     : '';
 
+  // Bug #4 (spec 004 / P1.5-T5): grand totals include subagent slice
+  // for both totalTokens and estimatedCost.
   const sql = `
     SELECT
       s.git_repo as gitRepo,
-      DATE(s.started_at) as date,
-      CAST(COALESCE(SUM(s.total_input_tokens + s.total_output_tokens + s.total_cache_creation_tokens + s.total_cache_read_tokens), 0) AS DOUBLE) as totalTokens,
+      ${tzDate('s.started_at')} as date,
+      CAST(COALESCE(SUM(
+        s.total_input_tokens + s.total_output_tokens + s.total_cache_creation_tokens + s.total_cache_read_tokens
+        + s.subagent_input_tokens + s.subagent_output_tokens + s.subagent_cache_creation_tokens + s.subagent_cache_read_tokens
+      ), 0) AS DOUBLE) as totalTokens,
       CAST(COUNT(*) AS DOUBLE) as sessionCount,
       CAST(COALESCE(SUM((SELECT COUNT(*) FROM turns t WHERE t.session_id = s.id)), 0) AS DOUBLE) as turnCount,
-      CAST(COALESCE(SUM(s.estimated_cost), 0.0) AS DOUBLE) as estimatedCost
+      CAST(COALESCE(SUM(COALESCE(s.estimated_cost, 0) + COALESCE(s.subagent_estimated_cost, 0)), 0.0) AS DOUBLE) as estimatedCost
     FROM sessions s
     ${joinClause}
     ${whereClause}
     ${whereClause ? 'AND' : 'WHERE'} s.git_repo IS NOT NULL
-    GROUP BY s.git_repo, DATE(s.started_at)
-    ORDER BY s.git_repo, DATE(s.started_at)
+    GROUP BY s.git_repo, ${tzDate('s.started_at')}
+    ORDER BY s.git_repo, ${tzDate('s.started_at')}
   `;
 
   const rows = await prisma.$queryRawUnsafe<any[]>(sql, ...params);
@@ -1173,21 +1594,26 @@ export async function getRepoDateHeatmap(filters: DashboardFilters) {
 // ─── 16. getMemberDateHeatmap ───────────────────────────────────────────────
 
 export async function getMemberDateHeatmap(filters: DashboardFilters) {
-  const { whereClause, params } = buildRawWhere(filters);
+  const effectiveFilters = applyHeatmapDateWindow(filters);
+  const { whereClause, params } = buildRawWhere(effectiveFilters);
 
+  // Bug #4 (spec 004 / P1.5-T5): grand-total totalTokens includes subagent slice.
   const sql = `
     SELECT
       m.display_name as displayName,
       m.git_email as gitEmail,
-      DATE(s.started_at) as date,
-      CAST(COALESCE(SUM(s.total_input_tokens + s.total_output_tokens + s.total_cache_creation_tokens + s.total_cache_read_tokens), 0) AS DOUBLE) as totalTokens,
+      ${tzDate('s.started_at')} as date,
+      CAST(COALESCE(SUM(
+        s.total_input_tokens + s.total_output_tokens + s.total_cache_creation_tokens + s.total_cache_read_tokens
+        + s.subagent_input_tokens + s.subagent_output_tokens + s.subagent_cache_creation_tokens + s.subagent_cache_read_tokens
+      ), 0) AS DOUBLE) as totalTokens,
       CAST(COUNT(*) AS DOUBLE) as sessionCount,
       CAST(COALESCE(SUM((SELECT COUNT(*) FROM turns t WHERE t.session_id = s.id)), 0) AS DOUBLE) as turnCount
     FROM sessions s
     LEFT JOIN members m ON s.member_id = m.id
     ${whereClause}
-    GROUP BY s.member_id, DATE(s.started_at)
-    ORDER BY m.display_name, DATE(s.started_at)
+    GROUP BY s.member_id, ${tzDate('s.started_at')}
+    ORDER BY m.display_name, ${tzDate('s.started_at')}
   `;
 
   const rows = await prisma.$queryRawUnsafe<any[]>(sql, ...params);
@@ -1207,6 +1633,8 @@ export async function getMemberDateHeatmap(filters: DashboardFilters) {
 export async function getProductivityMetrics(filters: DashboardFilters) {
   const { whereClause, params } = buildRawWhere(filters);
 
+  // Bug #4 (spec 004 / P1.5-T5): totalTokens / totalCost are grand totals
+  // (main + subagent). main / subagent breakdown is exposed alongside.
   const sql = `
     SELECT
       m.display_name as displayName,
@@ -1216,8 +1644,19 @@ export async function getProductivityMetrics(filters: DashboardFilters) {
       CAST(COALESCE(SUM(s.tool_use_count), 0) AS DOUBLE) as totalToolUses,
       CAST(COALESCE(SUM(s.subagent_count), 0) AS DOUBLE) as totalSubagents,
       CAST(COALESCE(SUM(s.error_count), 0) AS DOUBLE) as totalErrors,
-      CAST(COALESCE(SUM(s.total_input_tokens + s.total_output_tokens + s.total_cache_creation_tokens + s.total_cache_read_tokens), 0) AS DOUBLE) as totalTokens,
-      CAST(COALESCE(SUM(s.estimated_cost), 0.0) AS DOUBLE) as totalCost,
+      CAST(COALESCE(SUM(
+        s.total_input_tokens + s.total_output_tokens + s.total_cache_creation_tokens + s.total_cache_read_tokens
+        + s.subagent_input_tokens + s.subagent_output_tokens + s.subagent_cache_creation_tokens + s.subagent_cache_read_tokens
+      ), 0) AS DOUBLE) as totalTokens,
+      CAST(COALESCE(SUM(COALESCE(s.estimated_cost, 0) + COALESCE(s.subagent_estimated_cost, 0)), 0.0) AS DOUBLE) as totalCost,
+      CAST(COALESCE(SUM(
+        s.total_input_tokens + s.total_output_tokens + s.total_cache_creation_tokens + s.total_cache_read_tokens
+      ), 0) AS DOUBLE) as mainTokens,
+      CAST(COALESCE(SUM(s.estimated_cost), 0.0) AS DOUBLE) as mainCost,
+      CAST(COALESCE(SUM(
+        s.subagent_input_tokens + s.subagent_output_tokens + s.subagent_cache_creation_tokens + s.subagent_cache_read_tokens
+      ), 0) AS DOUBLE) as subagentTokens,
+      CAST(COALESCE(SUM(s.subagent_estimated_cost), 0.0) AS DOUBLE) as subagentCost,
       CAST(COALESCE(AVG((SELECT COUNT(*) FROM turns t WHERE t.session_id = s.id)), 0) AS DOUBLE) as avgTurns,
       CAST(COALESCE(AVG(s.tool_use_count), 0) AS DOUBLE) as avgToolUses
     FROM sessions s
@@ -1237,8 +1676,14 @@ export async function getProductivityMetrics(filters: DashboardFilters) {
     totalToolUses: Number(row.totalToolUses),
     totalSubagents: Number(row.totalSubagents),
     totalErrors: Number(row.totalErrors),
+    // Grand totals (main + subagent)
     totalTokens: Number(row.totalTokens),
     totalCost: Math.round(Number(row.totalCost) * 10000) / 10000,
+    // Main-only / Subagent-only breakdown
+    mainTokens: Number(row.mainTokens),
+    mainCost: Math.round(Number(row.mainCost) * 10000) / 10000,
+    subagentTokens: Number(row.subagentTokens),
+    subagentCost: Math.round(Number(row.subagentCost) * 10000) / 10000,
     avgTurns: Math.round(Number(row.avgTurns) * 10) / 10,
     avgToolUses: Math.round(Number(row.avgToolUses) * 10) / 10,
     tokensPerSession: Number(row.sessionCount) > 0
@@ -1354,4 +1799,116 @@ export async function getPromptFeed(
     })),
     hasMore,
   };
+}
+
+// ─── GET /models — Model pricing registry ──────────────────────────────────
+
+/**
+ * Returns the model pricing registry as exposed by the `pricingRepository`.
+ * Thin wrapper so the route handler does not import the repository directly.
+ *
+ * Decimal -> number conversion is already performed inside `pricingRepository`,
+ * so this function simply forwards the records.
+ *
+ * Spec: docs/specs/002-model-pricing-registry.md
+ */
+export async function getModels(options?: {
+  includeDeprecated?: boolean;
+}): Promise<{ models: ModelPricingRecord[] }> {
+  const models = await repoGetAllModels({
+    includeDeprecated: options?.includeDeprecated ?? false,
+  });
+  return { models };
+}
+
+// ─── POST /models/override — Manual pricing override ───────────────────────
+
+export interface ModelOverrideInput {
+  modelId: string;
+  family?: string;
+  tier?: string;
+  inputPerMtok: number;
+  outputPerMtok: number;
+  cacheWritePerMtok: number;
+  cacheReadPerMtok: number;
+  contextWindow?: number | null;
+  notes?: string;
+}
+
+/**
+ * Validation error thrown when override input fails sanity checks.
+ * Route handler maps this to HTTP 400.
+ */
+export class OverrideValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'OverrideValidationError';
+  }
+}
+
+function validateNonEmptyString(value: unknown, field: string): string {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new OverrideValidationError(`${field} must be a non-empty string`);
+  }
+  return value.trim();
+}
+
+function validateNonNegativeNumber(value: unknown, field: string): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    throw new OverrideValidationError(`${field} must be a non-negative finite number`);
+  }
+  return value;
+}
+
+/**
+ * Upsert a `manual_override` pricing row for the given model.
+ * Values written here take priority over litellm-synced rows in `getPricing`.
+ *
+ * Spec: docs/specs/002-model-pricing-registry.md (admin UI manual override)
+ * Task: docs/tasks/phase-2-t11.md
+ */
+export async function upsertModelOverride(input: ModelOverrideInput): Promise<{
+  ok: true;
+  modelId: string;
+}> {
+  const modelId = validateNonEmptyString(input.modelId, 'modelId');
+  const family = input.family ? validateNonEmptyString(input.family, 'family') : undefined;
+  const tier = input.tier ? validateNonEmptyString(input.tier, 'tier') : undefined;
+  const inputPerMtok = validateNonNegativeNumber(input.inputPerMtok, 'inputPerMtok');
+  const outputPerMtok = validateNonNegativeNumber(input.outputPerMtok, 'outputPerMtok');
+  const cacheWritePerMtok = validateNonNegativeNumber(input.cacheWritePerMtok, 'cacheWritePerMtok');
+  const cacheReadPerMtok = validateNonNegativeNumber(input.cacheReadPerMtok, 'cacheReadPerMtok');
+
+  await repoUpsertPricing({
+    modelId,
+    family,
+    tier,
+    inputPerMtok,
+    outputPerMtok,
+    cacheWritePerMtok,
+    cacheReadPerMtok,
+    contextWindow: input.contextWindow ?? null,
+    source: 'manual_override',
+    verified: true,
+    deprecated: false,
+  });
+
+  return { ok: true, modelId };
+}
+
+/**
+ * Delete the `manual_override` row for a model. No-op when none exists.
+ * Returns `{ ok: true, removed: N }` so callers can distinguish 0 / 1.
+ *
+ * Spec: docs/specs/002-model-pricing-registry.md (admin UI manual override)
+ * Task: docs/tasks/phase-2-t11.md
+ */
+export async function deleteModelOverride(modelId: string): Promise<{
+  ok: true;
+  modelId: string;
+  removed: number;
+}> {
+  const trimmed = validateNonEmptyString(modelId, 'modelId');
+  const removed = await repoDeleteOverride(trimmed);
+  return { ok: true, modelId: trimmed, removed };
 }

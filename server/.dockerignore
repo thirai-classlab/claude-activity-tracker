@@ -5,5 +5,8 @@ dist
 .git
 .gitignore
 *.md
-scripts/
+# scripts/: only sync-pricing.ts is needed at runtime (called by pricingSyncScheduler).
+# Test / SQL / dev-only scripts are excluded.
+scripts/*
+!scripts/sync-pricing.ts
 ecosystem.config.js

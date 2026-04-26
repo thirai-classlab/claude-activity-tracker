@@ -39,6 +39,14 @@ model Session {
   totalCacheCreationTokens Int       @default(0) @map("total_cache_creation_tokens")
   totalCacheReadTokens     Int       @default(0) @map("total_cache_read_tokens")
   estimatedCost            Float?    @map("estimated_cost") @db.Double
+  // Subagent aggregates (separate from main agent totals to avoid double counting).
+  // See bug #4 / docs/specs/004-phase1-remaining-bugs.md and docs/tasks/phase-1.5-t4.md.
+  // Grand total is computed as `total_* + subagent_*` at the read site (UI / dashboard).
+  subagentInputTokens         Int    @default(0) @map("subagent_input_tokens")
+  subagentOutputTokens        Int    @default(0) @map("subagent_output_tokens")
+  subagentCacheCreationTokens Int    @default(0) @map("subagent_cache_creation_tokens")
+  subagentCacheReadTokens     Int    @default(0) @map("subagent_cache_read_tokens")
+  subagentEstimatedCost       Float? @map("subagent_estimated_cost") @db.Double
   turnCount                Int       @default(0) @map("turn_count")
   toolUseCount             Int       @default(0) @map("tool_use_count")
   subagentCount            Int       @default(0) @map("subagent_count")
@@ -200,4 +208,27 @@ model AnalysisLog {
   @@index([memberEmail])
   @@index([createdAt])
   @@map("analysis_logs")
+}
+
+model ModelPricing {
+  id                  Int      @id @default(autoincrement())
+  modelId             String   @unique @map("model_id") @db.VarChar(128)
+  family              String   @db.VarChar(32)
+  tier                String   @db.VarChar(32)
+  inputPerMtok        Decimal  @map("input_per_mtok") @db.Decimal(10, 4)
+  outputPerMtok       Decimal  @map("output_per_mtok") @db.Decimal(10, 4)
+  cacheWritePerMtok   Decimal  @map("cache_write_per_mtok") @db.Decimal(10, 4)
+  cacheReadPerMtok    Decimal  @map("cache_read_per_mtok") @db.Decimal(10, 4)
+  contextWindow       Int?     @map("context_window")
+  maxOutput           Int?     @map("max_output")
+  source              String   @db.VarChar(32)
+  sourceUrl           String?  @map("source_url") @db.VarChar(512)
+  fetchedAt           DateTime @map("fetched_at")
+  verified            Boolean  @default(false)
+  deprecated          Boolean  @default(false)
+  notes               String?  @db.Text
+
+  @@index([family, tier])
+  @@index([deprecated, verified])
+  @@map("model_pricing")
 }

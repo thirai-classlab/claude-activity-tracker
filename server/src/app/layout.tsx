@@ -4,6 +4,7 @@ import './globals.css';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { FilterProvider } from '@/hooks/useFilters';
 import { Sidebar } from '@/components/layout/Sidebar';
+import { MetricsCorrectionBanner } from '@/components/layout/MetricsCorrectionBanner';
 import { useState } from 'react';
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -29,6 +30,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <div className="page-layout">
               <Sidebar />
               <div className="main-content">
+                <MetricsCorrectionBanner />
                 {children}
               </div>
             </div>

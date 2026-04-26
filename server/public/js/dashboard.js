@@ -442,9 +442,11 @@
               fill: true, tension: 0.3, borderWidth: 2, pointRadius: 3,
             },
             {
-              label: 'キャッシュRead',
-              data: data.map(function (d) { return p(d, 'totalCacheReadTokens', 'total_cache_read_tokens') || d.cacheReadTokens || d.cache_read_tokens || 0; }),
-              borderColor: COLORS.success, backgroundColor: COLORS.success + '20',
+              // spec: docs/specs/005-meaningful-charts.md — cache_read 除外
+              // 量で 100〜1000x、価値 0.1x のため画面占有を独占する。KPI 単独表示で確認可能。
+              label: 'キャッシュ作成',
+              data: data.map(function (d) { return p(d, 'totalCacheCreationTokens', 'total_cache_creation_tokens') || d.cacheCreationTokens || d.cache_creation_tokens || 0; }),
+              borderColor: COLORS.purple, backgroundColor: COLORS.purple + '20',
               fill: false, tension: 0.3, borderWidth: 1.5, pointRadius: 2, borderDash: [4, 4],
             },
           ],
@@ -769,16 +771,23 @@
       var totalOutput = d.totalOutputTokens || 0;
       var totalCacheCreate = d.totalCacheCreationTokens || 0;
       var totalCacheRead = d.totalCacheReadTokens || 0;
-      var totalAll = totalInput + totalOutput + totalCacheCreate + totalCacheRead;
-      var cacheEff = totalAll > 0 ? (totalCacheRead / totalAll * 100) : 0;
+      // Cache hit ratio = cache_read / (input + cache_creation + cache_read)
+      // Spec: docs/specs/004-phase1-remaining-bugs.md (bug #12)
+      // Denominator excludes output tokens (server-side billed at output rate).
+      var cacheDenom = totalInput + totalCacheCreate + totalCacheRead;
+      var cacheEff = cacheDenom > 0 ? (totalCacheRead / cacheDenom * 100) : 0;
+      // Defensive clamp to [0, 100] in case of malformed payloads.
+      cacheEff = Math.min(100, Math.max(0, cacheEff));
       el('tok-kpi').innerHTML =
         kpiCard('blue', 'IN', formatCompact(totalInput), '総入力トークン', '') +
         kpiCard('amber', 'OUT', formatCompact(totalOutput), '総出力トークン', '') +
         kpiCard('purple', 'CC', formatCompact(totalCacheCreate), 'キャッシュ作成', '') +
-        kpiCard('green', 'CE', formatPercent(cacheEff), 'キャッシュ効率', formatCompact(totalCacheRead) + ' cache read');
+        kpiCard('green', 'CE', formatPercent(cacheEff), 'キャッシュヒット率', formatCompact(totalCacheRead) + ' cache read');
     }).catch(function (e) { showError('tok-kpi', e); });
 
     // Daily token chart (stacked bar)
+    // spec: docs/specs/005-meaningful-charts.md — cache_read を除外
+    // (量で 100〜1000x、価値 0.1x のため画面占有を独占してしまう)
     fetchApi('/daily').then(function (data) {
       destroyChart('tok-daily');
       if (!data || !data.length) return;
@@ -798,10 +807,11 @@
               backgroundColor: COLORS.warning, borderRadius: 2,
             },
             {
-              label: 'キャッシュRead',
-              data: data.map(function (d) { return p(d, 'totalCacheReadTokens', 'total_cache_read_tokens') || d.cacheReadTokens || d.cache_read_tokens || 0; }),
-              backgroundColor: COLORS.success, borderRadius: 2,
+              label: 'キャッシュ作成',
+              data: data.map(function (d) { return p(d, 'totalCacheCreationTokens', 'total_cache_creation_tokens') || d.cacheCreationTokens || d.cache_creation_tokens || 0; }),
+              backgroundColor: COLORS.purple, borderRadius: 2,
             },
+            // cache_read は除外: KPI カードで単独表示
           ],
         },
         options: {
@@ -997,9 +1007,21 @@
   // ---------------------------------------------------------------------------
   function renderMembers() {
     var container = el('view-members');
+    // spec: docs/specs/005-meaningful-charts.md
+    // 主役: メンバー別 $ ランキング棒  /  サブ: 4 種 small multiples  /  下段: sortable table
     container.innerHTML =
       '<div class="page-header"><h1>メンバー分析</h1><p>メンバー別のClaude Code利用状況を把握し、活用度を確認</p></div>' +
       '<div class="page-body">' +
+        '<div class="grid-1"><div class="card"><div class="card-header"><span class="card-title">メンバー別 $ ランキング</span><span style="font-size:11px;color:var(--text-muted);">価値 (累積コスト) を主役。降順</span></div><div class="card-body"><div class="chart-container chart-container--md"><canvas id="chart-member-cost"></canvas></div></div></div></div>' +
+        '<div class="grid-1"><div class="card"><div class="card-header"><span class="card-title">トークン種別 Small Multiples</span><span style="font-size:11px;color:var(--text-muted);">独自スケール / メンバー順は主役と共有</span></div><div class="card-body" id="mem-small-multiples">' +
+          '<div class="small-multiples" style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px;">' +
+            '<div class="mini-chart" style="height:240px;"><div class="mini-chart-title">Input</div><div style="height:200px;"><canvas id="chart-mm-input"></canvas></div></div>' +
+            '<div class="mini-chart" style="height:240px;"><div class="mini-chart-title">Output</div><div style="height:200px;"><canvas id="chart-mm-output"></canvas></div></div>' +
+            '<div class="mini-chart" style="height:240px;"><div class="mini-chart-title">Cache Create</div><div style="height:200px;"><canvas id="chart-mm-cc"></canvas></div></div>' +
+            '<div class="mini-chart" style="height:240px;"><div class="mini-chart-title">Cache Read</div><div style="height:200px;"><canvas id="chart-mm-cr"></canvas></div></div>' +
+          '</div>' +
+        '</div></div></div>' +
+        '<div class="grid-1"><div class="card"><div class="card-header"><span class="card-title">メンバー別詳細 (sortable)</span><span style="font-size:11px;color:var(--text-muted);">ヘッダクリックでソート</span></div><div class="card-body card-body-flush" id="mem-detail-table"></div></div></div>' +
         '<div class="grid-1"><div class="card"><div class="card-header"><span class="card-title">メンバー × 日付 トークン数</span></div><div class="card-body" id="mem-token-heatmap"></div></div></div>' +
         '<div class="grid-1"><div class="card"><div class="card-header"><span class="card-title">メンバー × 日付 ターン / セッション数</span></div><div class="card-body" id="mem-turn-heatmap"></div></div></div>' +
         '<div class="split-layout">' +
@@ -1013,12 +1035,37 @@
     showLoading('mem-token-heatmap');
     showLoading('mem-turn-heatmap');
     showLoading('mem-table');
+    showLoading('mem-detail-table');
     expandedMember = null;
 
-    fetchApi('/members').then(function (data) {
-      if (!data || !data.length) { showNoData('mem-table'); return; }
-      renderMemberTable(data);
-    }).catch(function (e) { showError('mem-table', e); });
+    // Productivity (for tools count) — fetched in parallel, joined by gitEmail.
+    var productivityPromise = fetchApi('/productivity').catch(function () { return []; });
+
+    Promise.all([fetchApi('/members'), productivityPromise]).then(function (results) {
+      var members = results[0] || [];
+      var productivity = results[1] || [];
+      if (!members.length) { showNoData('mem-table'); showNoData('mem-detail-table'); return; }
+
+      var prodMap = {};
+      productivity.forEach(function (p) {
+        if (p && p.gitEmail) prodMap[p.gitEmail] = p;
+      });
+
+      // Cost-sorted ordering — used by main chart, small multiples, and table default.
+      var sorted = members.slice().sort(function (a, b) {
+        return (Number(b.estimatedCost) || 0) - (Number(a.estimatedCost) || 0);
+      });
+
+      renderMemberCostChart(sorted);
+      renderMemberSmallMultiples(sorted);
+      renderMemberDetailTable(sorted, prodMap);
+
+      // Existing interactive table (with detail panel)
+      renderMemberTable(members);
+    }).catch(function (e) {
+      showError('mem-table', e);
+      showError('mem-detail-table', e);
+    });
 
     fetchApi('/member-date-heatmap').then(function (data) {
       if (!data || !data.length) {
@@ -1045,6 +1092,210 @@
       showError('mem-token-heatmap', e);
       showError('mem-turn-heatmap', e);
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // View 3 — Spec 005: Member cost ranking, small multiples, sortable table
+  // ---------------------------------------------------------------------------
+
+  /** Member display label fallback (displayName || gitEmail). */
+  function memberLabel(m) {
+    return p(m, 'displayName', 'display_name') || p(m, 'gitEmail', 'git_email') || 'unknown';
+  }
+
+  /**
+   * Main: $ ranking bar.
+   * spec: docs/specs/005-meaningful-charts.md (P5-T1 mirror for legacy dashboard)
+   */
+  function renderMemberCostChart(sorted) {
+    destroyChart('member-cost');
+    var canvas = document.getElementById('chart-member-cost');
+    if (!canvas) return;
+    if (!sorted.length) return;
+
+    var labels = sorted.map(memberLabel);
+    var values = sorted.map(function (m) { return Number(m.estimatedCost) || 0; });
+
+    charts['member-cost'] = new Chart(canvas, {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: [{
+          label: 'コスト',
+          data: values,
+          backgroundColor: COLORS.warning + 'cc',
+          borderRadius: 4,
+        }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: { label: function (ctx) { return 'コスト: ' + formatCost(ctx.parsed.y); } },
+          },
+          datalabels: { display: false },
+        },
+        scales: {
+          x: { grid: { display: false }, ticks: { maxRotation: 45, minRotation: 30, font: { size: 11 } } },
+          y: { beginAtZero: true, ticks: { callback: function (v) { return formatCost(Number(v)); } } },
+        },
+      },
+    });
+  }
+
+  /**
+   * Sub: 4 small multiples (input / output / cache_create / cache_read).
+   * Each chart has independent Y scale. Member ordering is shared with the main chart.
+   * spec: docs/specs/005-meaningful-charts.md (P5-T2 mirror)
+   */
+  function renderMemberSmallMultiples(sorted) {
+    var labels = sorted.map(memberLabel);
+    var defs = [
+      { id: 'chart-mm-input',  key: 'totalInputTokens',          snake: 'total_input_tokens',          label: '入力',         color: COLORS.sonnet },
+      { id: 'chart-mm-output', key: 'totalOutputTokens',         snake: 'total_output_tokens',         label: '出力',         color: COLORS.opus },
+      { id: 'chart-mm-cc',     key: 'totalCacheCreationTokens',  snake: 'total_cache_creation_tokens', label: 'Cache 作成',   color: COLORS.warning },
+      { id: 'chart-mm-cr',     key: 'totalCacheReadTokens',      snake: 'total_cache_read_tokens',     label: 'Cache 読取',   color: COLORS.success },
+    ];
+
+    defs.forEach(function (def) {
+      var chartKey = 'mm-' + def.id;
+      destroyChart(chartKey);
+      var canvas = document.getElementById(def.id);
+      if (!canvas) return;
+      var values = sorted.map(function (m) { return Number(p(m, def.key, def.snake)) || 0; });
+      charts[chartKey] = new Chart(canvas, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: def.label,
+            data: values,
+            backgroundColor: def.color + 'cc',
+            borderRadius: 3,
+          }],
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: { label: function (ctx) { return def.label + ': ' + formatCompact(ctx.parsed.y); } },
+            },
+            datalabels: { display: false },
+          },
+          scales: {
+            x: { grid: { display: false }, ticks: { font: { size: 10 }, maxRotation: 60, minRotation: 30 } },
+            y: { beginAtZero: true, ticks: { callback: function (v) { return formatCompact(Number(v)); }, font: { size: 10 } } },
+          },
+        },
+      });
+    });
+  }
+
+  /**
+   * Detail sortable table.
+   * spec: docs/specs/005-meaningful-charts.md (P5-T3 mirror)
+   * Columns: メンバー / $ / input / output / cache_create / cache_read / turns / tools
+   */
+  var memberTableState = { sortKey: 'cost', dir: 'desc' };
+
+  function renderMemberDetailTable(members, prodMap) {
+    var COLS = [
+      { key: 'name',        header: 'メンバー',     align: 'left'  },
+      { key: 'cost',        header: '$ コスト',      align: 'right' },
+      { key: 'input',       header: 'input',         align: 'right' },
+      { key: 'output',      header: 'output',        align: 'right' },
+      { key: 'cacheCreate', header: 'cache_create',  align: 'right' },
+      { key: 'cacheRead',   header: 'cache_read',    align: 'right' },
+      { key: 'turns',       header: 'turns',         align: 'right' },
+      { key: 'tools',       header: 'tools',         align: 'right' },
+    ];
+
+    function valueFor(m, key) {
+      var prod = prodMap[p(m, 'gitEmail', 'git_email')];
+      switch (key) {
+        case 'name':        return memberLabel(m).toLowerCase();
+        case 'cost':        return Number(m.estimatedCost) || 0;
+        case 'input':       return Number(p(m, 'totalInputTokens', 'total_input_tokens')) || 0;
+        case 'output':      return Number(p(m, 'totalOutputTokens', 'total_output_tokens')) || 0;
+        case 'cacheCreate': return Number(p(m, 'totalCacheCreationTokens', 'total_cache_creation_tokens')) || 0;
+        case 'cacheRead':   return Number(p(m, 'totalCacheReadTokens', 'total_cache_read_tokens')) || 0;
+        case 'turns':       return Number(p(m, 'totalTurns', 'total_turns')) || 0;
+        case 'tools':       return prod ? Number(prod.totalToolUses) || 0 : 0;
+      }
+      return 0;
+    }
+
+    function build() {
+      var sorted = members.slice().sort(function (a, b) {
+        var av = valueFor(a, memberTableState.sortKey);
+        var bv = valueFor(b, memberTableState.sortKey);
+        if (typeof av === 'number' && typeof bv === 'number') {
+          return memberTableState.dir === 'asc' ? av - bv : bv - av;
+        }
+        var cmp = String(av).localeCompare(String(bv));
+        return memberTableState.dir === 'asc' ? cmp : -cmp;
+      });
+
+      var head = '<table class="data-table"><thead><tr>';
+      COLS.forEach(function (c) {
+        var arrow = '';
+        if (c.key === memberTableState.sortKey) {
+          arrow = memberTableState.dir === 'asc' ? ' \u2191' : ' \u2193';
+        }
+        var alignClass = c.align === 'right' ? 'text-right' : '';
+        head += '<th class="' + alignClass + '" data-sort-key="' + c.key + '" style="cursor:pointer;user-select:none;">' +
+          escapeHtml(c.header) + '<span style="color:var(--text-muted);">' + arrow + '</span></th>';
+      });
+      head += '</tr></thead><tbody>';
+
+      var rows = sorted.map(function (m) {
+        var prod = prodMap[p(m, 'gitEmail', 'git_email')];
+        var inp = Number(p(m, 'totalInputTokens', 'total_input_tokens')) || 0;
+        var out = Number(p(m, 'totalOutputTokens', 'total_output_tokens')) || 0;
+        var cc = Number(p(m, 'totalCacheCreationTokens', 'total_cache_creation_tokens')) || 0;
+        var cr = Number(p(m, 'totalCacheReadTokens', 'total_cache_read_tokens')) || 0;
+        var turns = Number(p(m, 'totalTurns', 'total_turns')) || 0;
+        var tools = prod ? Number(prod.totalToolUses) || 0 : 0;
+        var cost = Number(m.estimatedCost) || 0;
+        var displayName = p(m, 'displayName', 'display_name');
+        var gitEmail = p(m, 'gitEmail', 'git_email') || '';
+        var nameHtml = '<div style="font-weight:600;">' + escapeHtml(displayName || gitEmail) + '</div>' +
+          (displayName ? '<div style="font-size:11px;color:var(--text-muted);">' + escapeHtml(gitEmail) + '</div>' : '');
+        function numCell(raw, formatted) {
+          return '<td class="text-right font-mono" title="' + raw.toLocaleString() + '">' + formatted + '</td>';
+        }
+        return '<tr>' +
+          '<td>' + nameHtml + '</td>' +
+          '<td class="text-right font-mono" title="$' + cost.toFixed(4) + '" style="font-weight:600;">' + formatCost(cost) + '</td>' +
+          numCell(inp, formatCompact(inp)) +
+          numCell(out, formatCompact(out)) +
+          numCell(cc, formatCompact(cc)) +
+          numCell(cr, formatCompact(cr)) +
+          numCell(turns, formatNumber(turns)) +
+          numCell(tools, formatNumber(tools)) +
+          '</tr>';
+      }).join('');
+
+      el('mem-detail-table').innerHTML = head + rows + '</tbody></table>';
+
+      // Attach sort handlers
+      el('mem-detail-table').querySelectorAll('th[data-sort-key]').forEach(function (th) {
+        th.addEventListener('click', function () {
+          var k = th.getAttribute('data-sort-key');
+          if (memberTableState.sortKey === k) {
+            memberTableState.dir = memberTableState.dir === 'asc' ? 'desc' : 'asc';
+          } else {
+            memberTableState.sortKey = k;
+            memberTableState.dir = k === 'name' ? 'asc' : 'desc';
+          }
+          build();
+        });
+      });
+    }
+
+    build();
   }
 
   function renderMemberTable(data) {

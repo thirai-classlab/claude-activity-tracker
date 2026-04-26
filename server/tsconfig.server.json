@@ -4,7 +4,7 @@
     "module": "commonjs",
     "lib": ["ES2022"],
     "outDir": "./dist",
-    "rootDir": "./src",
+    "rootDir": ".",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -19,7 +19,8 @@
     "src/services/**/*",
     "src/middleware/**/*",
     "src/lib/prisma.ts",
-    "src/utils/**/*"
+    "src/utils/**/*",
+    "scripts/sync-pricing.ts"
   ],
   "exclude": ["node_modules", "dist", ".next", "src/app", "src/components", "src/hooks"]
 }

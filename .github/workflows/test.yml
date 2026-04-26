@@ -1,0 +1,145 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel superseded runs on the same branch/PR to save CI minutes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # -------------------------------------------------------------------------
+  # Hook-side parser tests (vitest).
+  # Covers the synthetic U1-U9 suite and the real-fixture inflation guard
+  # (setup/hooks/tests/inflation.test.js). Fixtures are gitignored; when they
+  # are absent the inflation suite skips its ratio assertions while still
+  # verifying that dedup logic produces non-zero output on synthetic data.
+  # -------------------------------------------------------------------------
+  hooks-tests:
+    name: Hooks parser tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: setup/hooks
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run tests
+        run: npm test
+
+  # -------------------------------------------------------------------------
+  # Server-side parser tests (node:test + tsx).
+  # Mirrors the hook-side suite on the TypeScript parser. Does NOT require a
+  # database — only the pure `parseTranscriptFile` function is exercised.
+  # -------------------------------------------------------------------------
+  server-tests:
+    name: Server parser tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Generate Prisma client
+        # parseTranscript itself doesn't hit the DB, but the project imports
+        # `@prisma/client` transitively. Generating the client keeps TS types
+        # consistent with the checked-in schema.
+        run: npx prisma generate
+
+      - name: Run parser tests
+        run: npm test
+
+  # -------------------------------------------------------------------------
+  # Full API smoke test against a live MariaDB + Express server.
+  # Disabled by default (continue-on-error) because the existing
+  # `scripts/test-api.ts` assumes a running server bound to localhost:3000.
+  # Kept in the matrix so ops can flip `continue-on-error: false` once the
+  # script gains a self-hosted bootstrap step.
+  # -------------------------------------------------------------------------
+  api-smoke:
+    name: API smoke tests (MariaDB)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    services:
+      mariadb:
+        image: mariadb:11
+        env:
+          MARIADB_ROOT_PASSWORD: root
+          MARIADB_DATABASE: claude_tracker
+          MARIADB_USER: claude
+          MARIADB_PASSWORD: claude
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      DATABASE_URL: mysql://claude:claude@127.0.0.1:3306/claude_tracker
+      API_KEY: ci-test-key
+      NEXT_PUBLIC_API_KEY: ci-test-key
+      PORT: '3000'
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Push schema to MariaDB
+        run: npx prisma db push --skip-generate --accept-data-loss
+
+      - name: Start server in background
+        run: |
+          npm run dev &
+          echo $! > server.pid
+          # Poll the health endpoint (with a generous timeout) instead of a
+          # blind sleep — avoids flaky CI when cold-starts are slow.
+          for i in $(seq 1 30); do
+            if curl -fsS "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; then
+              echo "Server is up"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Server failed to start" >&2
+          exit 1
+
+      - name: Run API smoke tests
+        run: npm run test:api
+
+      - name: Stop server
+        if: always()
+        run: |
+          if [ -f server.pid ]; then
+            kill "$(cat server.pid)" || true
+          fi

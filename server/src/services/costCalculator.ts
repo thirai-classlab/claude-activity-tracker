@@ -1,13 +1,21 @@
-export interface CostRates {
-  /** Cost per 1M input tokens (USD) */
-  input: number;
-  /** Cost per 1M output tokens (USD) */
-  output: number;
-  /** Cost per 1M cache write tokens (USD) */
-  cacheWrite: number;
-  /** Cost per 1M cache read tokens (USD) */
-  cacheRead: number;
-}
+/**
+ * Cost Calculator
+ *
+ * Thin wrapper over `pricingRepository.getPricing` that converts raw token
+ * usage into a USD dollar amount. The repository is now the single source of
+ * truth for pricing and already handles the full fallback chain
+ * (manual_override -> exact model_id -> family standard -> hardcoded default).
+ *
+ * Spec: docs/specs/002-model-pricing-registry.md
+ * Task: docs/tasks/phase-2-t4.md
+ *
+ * Before P2-T4 this file owned a hardcoded `DEFAULT_RATES` table, a
+ * `getModelFamily` helper, and a synchronous `calculateCost`. All of that
+ * lived in three places (costCalculator, dashboardService, constants) and
+ * was unable to express the 1M-context premium tier. Pricing is now
+ * centralized in `pricingRepository` and `calculateCost` becomes async.
+ */
+import { getPricing, type PricingRates } from './pricingRepository';
 
 export interface TokenUsage {
   inputTokens: number;
@@ -16,75 +24,48 @@ export interface TokenUsage {
   cacheReadTokens: number;
 }
 
-/** Default cost rates per 1M tokens (USD) */
-const DEFAULT_RATES: Record<string, CostRates> = {
-  opus: {
-    input: 15,
-    output: 75,
-    cacheWrite: 15 * 1.25, // 1.25x input
-    cacheRead: 15 * 0.1,   // 0.1x input
-  },
-  sonnet: {
-    input: 3,
-    output: 15,
-    cacheWrite: 3 * 1.25,
-    cacheRead: 3 * 0.1,
-  },
-  haiku: {
-    input: 0.80,
-    output: 4,
-    cacheWrite: 0.80 * 1.25,
-    cacheRead: 0.80 * 0.1,
-  },
-};
-
 /**
- * Determine the model family from a model name string.
- * Returns 'opus', 'sonnet', or 'haiku'. Defaults to 'sonnet' if unknown.
+ * Backwards-compatible type alias. Older call sites referenced `CostRates`;
+ * the repository's `PricingRates` has the same shape so we simply re-export.
  */
-export function getModelFamily(modelName: string): string {
-  const lower = modelName.toLowerCase();
-  if (lower.includes('opus')) return 'opus';
-  if (lower.includes('haiku')) return 'haiku';
-  if (lower.includes('sonnet')) return 'sonnet';
-  // Default to sonnet for unknown models
-  return 'sonnet';
-}
-
-/**
- * Get cost rates for a given model name.
- * Rates can be overridden via environment variables:
- *   COST_OPUS_INPUT, COST_OPUS_OUTPUT, COST_SONNET_INPUT, etc.
- */
-export function getCostRates(modelName: string): CostRates {
-  const family = getModelFamily(modelName);
-  const defaults = DEFAULT_RATES[family] || DEFAULT_RATES.sonnet;
-
-  const envPrefix = `COST_${family.toUpperCase()}`;
-  const inputRate = parseFloat(process.env[`${envPrefix}_INPUT`] || '') || defaults.input;
-  const outputRate = parseFloat(process.env[`${envPrefix}_OUTPUT`] || '') || defaults.output;
-
-  return {
-    input: inputRate,
-    output: outputRate,
-    cacheWrite: inputRate * 1.25,
-    cacheRead: inputRate * 0.1,
-  };
-}
+export type CostRates = PricingRates;
 
 /**
  * Calculate estimated cost in USD for a given model and token usage.
- * Returns a number rounded to 4 decimal places.
+ *
+ * Returns a `Promise<number>` rounded to 4 decimal places. Callers must
+ * `await` the result. The pricing lookup is delegated to the repository,
+ * which applies the standard fallback chain.
+ *
+ * The full `usage` object is forwarded to {@link getPricing} so that prompts
+ * with combined input tokens above 200K are billed at the registered
+ * `-context-1m` premium-tier rates when such a variant exists. See
+ * docs/decisions/resolved.md D-008.
  */
-export function calculateCost(modelName: string, usage: TokenUsage): number {
-  const rates = getCostRates(modelName);
+export async function calculateCost(
+  modelName: string,
+  usage: TokenUsage,
+): Promise<number> {
+  const rates = await getPricing(modelName, {
+    inputTokens: usage.inputTokens,
+    cacheCreationTokens: usage.cacheCreationTokens,
+    cacheReadTokens: usage.cacheReadTokens,
+    outputTokens: usage.outputTokens,
+  });
 
   const cost =
-    (usage.inputTokens / 1_000_000) * rates.input +
-    (usage.outputTokens / 1_000_000) * rates.output +
-    (usage.cacheCreationTokens / 1_000_000) * rates.cacheWrite +
-    (usage.cacheReadTokens / 1_000_000) * rates.cacheRead;
+    (usage.inputTokens / 1_000_000) * rates.inputPerMtok +
+    (usage.outputTokens / 1_000_000) * rates.outputPerMtok +
+    (usage.cacheCreationTokens / 1_000_000) * rates.cacheWritePerMtok +
+    (usage.cacheReadTokens / 1_000_000) * rates.cacheReadPerMtok;
 
   // Round to 4 decimal places
   return Math.round(cost * 10000) / 10000;
 }
+
+/**
+ * Backwards-compatible export. `getCostRates` used to be a synchronous
+ * helper in this module; it is now simply re-exported from the repository
+ * (and is async). Any remaining call sites must `await` the return value.
+ */
+export { getPricing as getCostRates };

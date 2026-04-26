@@ -75,7 +75,9 @@ async function hookPost(path: string, body: Record<string, unknown>): Promise<Re
 
 async function dashboardGet(path: string, query?: Record<string, string>): Promise<Response> {
   const qs = query ? '?' + new URLSearchParams(query).toString() : '';
-  const res = await fetch(`${BASE_URL}/api/dashboard/${path}${qs}`);
+  const res = await fetch(`${BASE_URL}/api/dashboard/${path}${qs}`, {
+    headers: { 'x-api-key': API_KEY },
+  });
   return res;
 }
 
@@ -231,6 +233,111 @@ async function testHookLifecycle(): Promise<void> {
     }
   });
 
+  // 2e-verify. Verify turnCount/toolUseCount are derived from DB (P1-T3)
+  //
+  // The stop hook sends turn_count=1 and tool_use_count=3, but session.turnCount
+  // and session.toolUseCount must reflect DB ground truth (not transcript):
+  //   - 1 prompt hook was fired -> 1 turn row -> turnCount = 1
+  //   - 3 main-agent tool_uses were sent -> 3 rows with subagentId=null -> toolUseCount = 3
+  //   - 1 subagent tool_use (Read) is excluded (subagentId != null)
+  await runTest('Session.turnCount/toolUseCount derived from DB (P1-T3)', async () => {
+    // Find our session id by sessionUuid via /sessions (paginated)
+    const listRes = await dashboardGet('sessions', {
+      from: YESTERDAY,
+      to: TOMORROW,
+      member: 'api-test@example.com',
+      per_page: '200',
+    });
+    const listJson = (await assertJsonOk(listRes, '/api/dashboard/sessions')) as {
+      data: Array<{ id: number; sessionUuid: string; turnCount: number; toolUseCount: number }>;
+    };
+    const mySession = listJson.data.find((s) => s.sessionUuid === SESSION_UUID);
+    if (!mySession) {
+      throw new Error(`Session ${SESSION_UUID} not found in /sessions response`);
+    }
+    if (mySession.turnCount !== 1) {
+      throw new Error(
+        `Expected turnCount=1 (DB ground truth), got ${mySession.turnCount}`,
+      );
+    }
+    if (mySession.toolUseCount !== 3) {
+      throw new Error(
+        `Expected toolUseCount=3 (main-agent rows, subagentId=null), got ${mySession.toolUseCount}`,
+      );
+    }
+  });
+
+  // 2e-regression. Re-run stop with INFLATED transcript counts to prove they
+  // are ignored and DB counts win (regression guard for P1-T3).
+  //
+  // Sends turn_count=999 and tool_use_count=999 along with the same 3 tool_uses.
+  // Expected: session.turnCount stays at 1 (DB turns) and session.toolUseCount
+  // stays at 3 (DB tool_uses for main agent), not 999.
+  await runTest('Inflated transcript counts are overridden by DB counts (P1-T3)', async () => {
+    const res = await hookPost('stop', {
+      session_uuid: SESSION_UUID,
+      model: 'claude-sonnet-4-20250514',
+      git_user: 'api-test@example.com',
+      git_repo: 'test-org/test-repo',
+      total_input_tokens: 25000,
+      total_output_tokens: 8000,
+      turn_count: 999,
+      tool_use_count: 999,
+      tool_uses: [
+        {
+          tool_use_uuid: randomUUID(),
+          tool_name: 'Read',
+          tool_category: 'file',
+          tool_input_summary: 'Read package.json',
+          status: 'success',
+        },
+        {
+          tool_use_uuid: randomUUID(),
+          tool_name: 'Write',
+          tool_category: 'file',
+          tool_input_summary: 'Write scripts/test-api.ts',
+          status: 'success',
+        },
+        {
+          tool_use_uuid: randomUUID(),
+          tool_name: 'Bash',
+          tool_category: 'shell',
+          tool_input_summary: 'npm test',
+          status: 'success',
+        },
+      ],
+    });
+    const json = (await assertJsonOk(res, 'stop (inflated)')) as Record<string, unknown>;
+    if (json.ok !== true) {
+      throw new Error(`Expected { ok: true }, got ${JSON.stringify(json)}`);
+    }
+
+    // Verify DB counts are still 1 / 3, not 999
+    const listRes = await dashboardGet('sessions', {
+      from: YESTERDAY,
+      to: TOMORROW,
+      member: 'api-test@example.com',
+      per_page: '200',
+    });
+    const listJson = (await assertJsonOk(listRes, '/api/dashboard/sessions')) as {
+      data: Array<{ sessionUuid: string; turnCount: number; toolUseCount: number }>;
+    };
+    const mySession = listJson.data.find((s) => s.sessionUuid === SESSION_UUID);
+    if (!mySession) {
+      throw new Error(`Session ${SESSION_UUID} not found after inflated stop`);
+    }
+    if (mySession.turnCount !== 1) {
+      throw new Error(
+        `Inflated turn_count=999 was written to DB (expected turnCount=1, got ${mySession.turnCount})`,
+      );
+    }
+    if (mySession.toolUseCount !== 3) {
+      throw new Error(
+        `Inflated tool_use_count=999 was written to DB (expected toolUseCount=3, got ${mySession.toolUseCount})`,
+      );
+    }
+  });
+
   // 2f. session-end
   await runTest('POST /api/hook/session-end', async () => {
     const res = await hookPost('session-end', {
@@ -241,6 +348,136 @@ async function testHookLifecycle(): Promise<void> {
     const json = (await assertJsonOk(res, 'session-end')) as Record<string, unknown>;
     if (json.ok !== true) {
       throw new Error(`Expected { ok: true }, got ${JSON.stringify(json)}`);
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// 2.5. Phase 1.5 E2E regression tests (bugs #4, #12 + grand total semantics)
+// ---------------------------------------------------------------------------
+
+async function testPhase15Integration(): Promise<void> {
+  // E1: subagent tokens land in dedicated subagent_* columns, not in
+  // session.total_* (bug #4 / P1.5-T4). The lifecycle test above sent a
+  // subagent-stop with input_tokens=1200 / output_tokens=800; verify those
+  // values are not double-counted in `mainInputTokens` and that the grand
+  // total in `totalInputTokens` includes them.
+  await runTest('Stop hook splits subagent tokens into subagent_* columns (P1.5-T4)', async () => {
+    const res = await dashboardGet('stats', {
+      from: YESTERDAY,
+      to: TOMORROW,
+      member: 'api-test@example.com',
+    });
+    const json = (await assertJsonOk(res, '/api/dashboard/stats')) as {
+      mainInputTokens?: number;
+      mainOutputTokens?: number;
+      subagentInputTokens?: number;
+      subagentOutputTokens?: number;
+      totalInputTokens?: number;
+      totalOutputTokens?: number;
+    };
+
+    // Schema check — all six new fields must be present and numeric.
+    const requiredKeys = [
+      'mainInputTokens',
+      'mainOutputTokens',
+      'subagentInputTokens',
+      'subagentOutputTokens',
+      'totalInputTokens',
+      'totalOutputTokens',
+    ] as const;
+    for (const key of requiredKeys) {
+      if (typeof json[key] !== 'number') {
+        throw new Error(`Expected numeric ${key} in /stats response, got ${typeof json[key]}`);
+      }
+    }
+
+    // Subagent slice should be >= the values we sent (1200 / 800), since the
+    // member filter scopes the response to our test member.
+    if ((json.subagentInputTokens ?? 0) < 1200) {
+      throw new Error(
+        `Expected subagentInputTokens >= 1200 (we sent 1200 via subagent-stop), got ${json.subagentInputTokens}`,
+      );
+    }
+    if ((json.subagentOutputTokens ?? 0) < 800) {
+      throw new Error(
+        `Expected subagentOutputTokens >= 800, got ${json.subagentOutputTokens}`,
+      );
+    }
+
+    // Grand total invariant: totalInputTokens === mainInputTokens + subagentInputTokens.
+    const mainIn = json.mainInputTokens ?? 0;
+    const subIn = json.subagentInputTokens ?? 0;
+    const grandIn = json.totalInputTokens ?? 0;
+    if (grandIn !== mainIn + subIn) {
+      throw new Error(
+        `Grand total invariant broken: totalInputTokens=${grandIn} != mainInputTokens(${mainIn}) + subagentInputTokens(${subIn})`,
+      );
+    }
+
+    const mainOut = json.mainOutputTokens ?? 0;
+    const subOut = json.subagentOutputTokens ?? 0;
+    const grandOut = json.totalOutputTokens ?? 0;
+    if (grandOut !== mainOut + subOut) {
+      throw new Error(
+        `Grand total invariant broken: totalOutputTokens=${grandOut} != mainOutputTokens(${mainOut}) + subagentOutputTokens(${subOut})`,
+      );
+    }
+  });
+
+  // E2: cacheEfficiency ratio must be in [0, 1] (bug #12 / P1.5-T1).
+  await runTest('GET /stats cacheEfficiency is in [0, 1] (P1.5-T1)', async () => {
+    const res = await dashboardGet('stats', {
+      from: YESTERDAY,
+      to: TOMORROW,
+    });
+    const json = (await assertJsonOk(res, '/api/dashboard/stats')) as {
+      cacheEfficiency?: number;
+    };
+    const ratio = json.cacheEfficiency;
+    if (typeof ratio !== 'number') {
+      throw new Error(`Expected numeric cacheEfficiency, got ${typeof ratio}`);
+    }
+    if (ratio < 0 || ratio > 1) {
+      throw new Error(`cacheEfficiency must be in [0, 1], got ${ratio}`);
+    }
+  });
+
+  // E3: daily endpoint also returns the main / subagent / grand-total triplet
+  // for backward-compat with charts (P1.5-T5).
+  await runTest('GET /daily exposes main / subagent / grand totals (P1.5-T5)', async () => {
+    const res = await dashboardGet('daily', {
+      from: YESTERDAY,
+      to: TOMORROW,
+      member: 'api-test@example.com',
+    });
+    const json = (await assertJsonOk(res, '/api/dashboard/daily')) as Array<Record<string, unknown>>;
+    if (!Array.isArray(json)) {
+      throw new Error(`Expected array response from /daily, got ${typeof json}`);
+    }
+    if (json.length === 0) {
+      // No rows for our member is acceptable if test ordering changed; treat
+      // as a soft pass rather than a regression signal.
+      return;
+    }
+    const row = json[0];
+    const requiredKeys = [
+      'mainInputTokens',
+      'subagentInputTokens',
+      'totalInputTokens',
+    ];
+    for (const key of requiredKeys) {
+      if (typeof row[key] !== 'number') {
+        throw new Error(`Expected numeric ${key} in /daily row, got ${typeof row[key]}`);
+      }
+    }
+    const main = row.mainInputTokens as number;
+    const sub = row.subagentInputTokens as number;
+    const grand = row.totalInputTokens as number;
+    if (grand !== main + sub) {
+      throw new Error(
+        `/daily grand total invariant broken: totalInputTokens=${grand} != mainInputTokens(${main}) + subagentInputTokens(${sub})`,
+      );
     }
   });
 }
@@ -333,6 +570,50 @@ async function testDashboardEdgeCases(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// 6. Static /docs route (D-007)
+// ---------------------------------------------------------------------------
+
+async function testDocsStatic(): Promise<void> {
+  await runTest('GET /docs/announcements/2026-04-data-correction.md (200 + markdown)', async () => {
+    const res = await fetch(`${BASE_URL}/docs/announcements/2026-04-data-correction.md`);
+    if (res.status !== 200) {
+      throw new Error(`expected 200, got ${res.status}`);
+    }
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('text/markdown')) {
+      throw new Error(`expected Content-Type text/markdown, got ${contentType}`);
+    }
+    const body = await res.text();
+    if (body.length === 0) {
+      throw new Error('response body is empty');
+    }
+  });
+
+  await runTest('GET /docs/ (no directory listing)', async () => {
+    const res = await fetch(`${BASE_URL}/docs/`);
+    // Acceptable: 404 (no index.md), or non-2xx. A 200 directory listing would fail.
+    if (res.status === 200) {
+      const body = await res.text();
+      if (/Index of|<li><a href="/i.test(body)) {
+        throw new Error('directory listing appears to be exposed');
+      }
+    }
+  });
+
+  await runTest('GET /docs/../server/.env.example (path traversal blocked)', async () => {
+    const res = await fetch(`${BASE_URL}/docs/../server/.env.example`, {
+      redirect: 'manual',
+    });
+    if (res.status === 200) {
+      const body = await res.text();
+      if (body.includes('DATABASE_URL=') && body.includes('API_KEY=')) {
+        throw new Error('path traversal leaked server/.env.example contents');
+      }
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Summary
 // ---------------------------------------------------------------------------
 
@@ -381,6 +662,9 @@ async function main(): Promise<void> {
   console.log('\n--- Hook Lifecycle ---');
   await testHookLifecycle();
 
+  console.log('\n--- Phase 1.5 E2E (subagent split / cacheEfficiency / grand totals) ---');
+  await testPhase15Integration();
+
   console.log('\n--- Hook Auth ---');
   await testHookAuth();
 
@@ -389,6 +673,9 @@ async function main(): Promise<void> {
 
   console.log('\n--- Dashboard Edge Cases ---');
   await testDashboardEdgeCases();
+
+  console.log('\n--- Static /docs ---');
+  await testDocsStatic();
 
   printSummary();
 

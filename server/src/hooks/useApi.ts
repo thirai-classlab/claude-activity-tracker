@@ -1,7 +1,7 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
-import { api } from '@/lib/api';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { api, type ModelOverrideInput } from '@/lib/api';
 import type { DashboardFilters } from '@/lib/types';
 
 // Stable query key builder
@@ -144,5 +144,39 @@ export function useAnalysisLogs(email: string, limit?: number) {
     queryKey: ['analysis-logs', email, limit],
     queryFn: () => api.getAnalysisLogs(email, limit),
     enabled: !!email,
+  });
+}
+
+// Pricing registry rarely changes, so cache aggressively (1 hour).
+// Spec: docs/specs/002-model-pricing-registry.md
+export function useModels(includeDeprecated = false) {
+  return useQuery({
+    queryKey: ['models', { includeDeprecated }],
+    queryFn: () => api.getModels(includeDeprecated),
+    staleTime: 60 * 60 * 1000, // 1 hour
+  });
+}
+
+// ─── Manual pricing override mutations (admin UI) ──────────────────────────
+// Spec: docs/specs/002-model-pricing-registry.md
+// Task: docs/tasks/phase-2-t11.md
+
+function invalidateModels(client: ReturnType<typeof useQueryClient>): void {
+  client.invalidateQueries({ queryKey: ['models'] });
+}
+
+export function useUpsertModelOverride() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: ModelOverrideInput) => api.upsertModelOverride(input),
+    onSuccess: () => invalidateModels(client),
+  });
+}
+
+export function useDeleteModelOverride() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (modelId: string) => api.deleteModelOverride(modelId),
+    onSuccess: () => invalidateModels(client),
   });
 }

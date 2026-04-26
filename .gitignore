@@ -49,3 +49,19 @@ package-lock.json
 npm-debug.log*
 setup/hooks/config.json
 .mcp.json
+
+# Transcript test fixtures (contain real user prompt content)
+# CI still runs the synthetic U1-U9 suites; ratio tests skip gracefully when absent.
+setup/hooks/tests/fixtures/*.jsonl
+server/tests/fixtures/*.jsonl
+
+# Working scratch / personal notes
+temp/
+setup.zip
+タスクの優先度
+setup/old/
+
+# Claude runtime artifacts (logs, locks, cache)
+.claude/hooks/*.debug.log
+.claude/scheduled_tasks.lock
+.claude/memory/

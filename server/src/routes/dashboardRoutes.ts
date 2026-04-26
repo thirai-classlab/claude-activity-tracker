@@ -230,6 +230,68 @@ dashboardRoutes.get('/productivity', async (req: Request, res: Response) => {
   }
 });
 
+// ─── GET /models — Model pricing registry ──────────────────────────────────
+
+dashboardRoutes.get('/models', async (req: Request, res: Response) => {
+  try {
+    const includeDeprecated = req.query.includeDeprecated === 'true';
+    const data = await dashboardService.getModels({ includeDeprecated });
+    res.json(data);
+  } catch (error) {
+    console.error('models error:', error);
+    res.status(500).json({ error: 'Failed to get models' });
+  }
+});
+
+// ─── POST /models/override — Add or update a manual override ───────────────
+// Spec: docs/specs/002-model-pricing-registry.md
+// Task: docs/tasks/phase-2-t11.md
+
+dashboardRoutes.post('/models/override', async (req: Request, res: Response) => {
+  try {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const input: dashboardService.ModelOverrideInput = {
+      modelId: body.modelId as string,
+      family: body.family as string | undefined,
+      tier: body.tier as string | undefined,
+      inputPerMtok: body.inputPerMtok as number,
+      outputPerMtok: body.outputPerMtok as number,
+      cacheWritePerMtok: body.cacheWritePerMtok as number,
+      cacheReadPerMtok: body.cacheReadPerMtok as number,
+      contextWindow: (body.contextWindow ?? null) as number | null,
+      notes: body.notes as string | undefined,
+    };
+    const result = await dashboardService.upsertModelOverride(input);
+    res.json(result);
+  } catch (error) {
+    if (error instanceof dashboardService.OverrideValidationError) {
+      res.status(400).json({ error: error.message });
+      return;
+    }
+    console.error('models override upsert error:', error);
+    res.status(500).json({ error: 'Failed to upsert model override' });
+  }
+});
+
+// ─── DELETE /models/override/:modelId — Remove a manual override ──────────
+// Spec: docs/specs/002-model-pricing-registry.md
+// Task: docs/tasks/phase-2-t11.md
+
+dashboardRoutes.delete('/models/override/:modelId', async (req: Request, res: Response) => {
+  try {
+    const modelId = req.params.modelId;
+    const result = await dashboardService.deleteModelOverride(modelId);
+    res.json(result);
+  } catch (error) {
+    if (error instanceof dashboardService.OverrideValidationError) {
+      res.status(400).json({ error: error.message });
+      return;
+    }
+    console.error('models override delete error:', error);
+    res.status(500).json({ error: 'Failed to delete model override' });
+  }
+});
+
 // ─── GET /filters — Available filter values ────────────────────────────────
 
 dashboardRoutes.get('/filters', async (_req: Request, res: Response) => {
